@@ -1,0 +1,34 @@
+# Test fixtures — large/binary sample data (BT spec PDF, sample images)
+tests/fixtures/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local config / secrets
+.env
+*.local
+
+# Derived data stores (regenerable from MySQL — never the source of truth)
+*.lance/
+data/lance/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.idea/
+.vscode/
