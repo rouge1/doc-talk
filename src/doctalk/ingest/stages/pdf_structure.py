@@ -12,16 +12,17 @@ import fitz  # PyMuPDF
 
 from doctalk.db import repo
 from doctalk.ingest.dag import StageContext
+from doctalk.ingest.stages.heading_detect import detect_headings
 from doctalk.ingest.stages.util import page_chapter_map, split_text
 
 CHUNK_CHARS = 1500
 CHUNK_OVERLAP = 200
 
 
-def _chapter_rows(toc: list[list], total_pages: int) -> list[dict]:
-    """Turn ``get_toc`` output (``[level, title, page]``, 1-based page) into insertable rows
-    with parent links and section page ranges. A section spans until the next entry of the same
-    or higher level (smaller/equal level number)."""
+def _chapter_rows(toc: list[list], total_pages: int, source: str = "outline") -> list[dict]:
+    """Turn ``[level, title, page]`` entries (1-based page; from get_toc OR heading detection)
+    into insertable rows with parent links and section page ranges. A section spans until the
+    next entry of the same or higher level (smaller/equal level number)."""
     entries = [(lvl, title, pg) for (lvl, title, pg) in toc if pg and pg > 0]
     rows: list[dict] = []
     stack: list[tuple[int, int]] = []  # (level, ord) of open ancestors
@@ -41,7 +42,7 @@ def _chapter_rows(toc: list[list], total_pages: int) -> list[dict]:
                 "title": (title or "").strip()[:1024] or f"(untitled {i})",
                 "page_start": page,
                 "page_end": page_end,
-                "source": "outline",
+                "source": source,
                 "parent_ord": parent_ord,
             }
         )
@@ -59,7 +60,15 @@ def run(ctx: StageContext) -> None:
     doc = fitz.open(ctx.file_path)
     try:
         total_pages = doc.page_count
-        chapter_rows = _chapter_rows(doc.get_toc(simple=True), total_pages)
+
+        # Prefer the embedded outline; fall back to typography/numbering heading detection when
+        # the PDF has no TOC (a flat "3000 pages of words" still gets a navigable tree).
+        toc = doc.get_toc(simple=True)
+        source = "outline"
+        if not toc:
+            toc = detect_headings(doc)
+            source = "heading_detect"
+        chapter_rows = _chapter_rows(toc, total_pages, source)
         chapters = repo.insert_chapters(ctx.session, file_id, chapter_rows)
         page_to_chapter = page_chapter_map(chapters, total_pages)
 
@@ -83,5 +92,8 @@ def run(ctx: StageContext) -> None:
     finally:
         doc.close()
 
+    # Observability: which path produced the tree, and a scanned-PDF (no text layer) signal.
+    ctx.scratch["chapters_source"] = source if chapter_rows else "none"
     ctx.scratch["n_chapters"] = len(chapter_rows)
     ctx.scratch["n_chunks"] = ordinal
+    ctx.scratch["likely_scanned"] = total_pages > 0 and ordinal == 0
