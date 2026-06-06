@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from doctalk.db.models import File, Job, JobStatus, utcnow
+from doctalk.db.models import Chapter, Chunk, File, Job, JobStatus, Link, utcnow
 
 
 # --- files -----------------------------------------------------------------
@@ -20,6 +20,10 @@ from doctalk.db.models import File, Job, JobStatus, utcnow
 
 def get_file(session: Session, content_hash: str) -> File | None:
     return session.scalar(select(File).where(File.content_hash == content_hash))
+
+
+def get_file_id(session: Session, content_hash: str) -> int | None:
+    return session.scalar(select(File.id).where(File.content_hash == content_hash))
 
 
 def upsert_file(
@@ -116,3 +120,65 @@ def fail_job(session: Session, input_hash: str, error: str) -> None:
     job.status = JobStatus.error
     job.error = error[:4000]
     job.finished_at = utcnow()
+
+
+# --- document structure (chapters / chunks / links) ------------------------
+# Each stage clears its own prior output for a file before writing, so a re-run (e.g. after a
+# model/param upgrade) never duplicates rows — "never process processed data" stays honest.
+
+
+def clear_chapters_for_file(session: Session, file_id: int) -> None:
+    # Chunks reference chapters; delete them first to avoid dangling rows.
+    session.execute(delete(Chunk).where(Chunk.file_id == file_id))
+    session.execute(delete(Chapter).where(Chapter.file_id == file_id))
+
+
+def clear_links_for_file(session: Session, file_id: int) -> None:
+    session.execute(delete(Link).where(Link.file_id == file_id))
+
+
+def insert_chapters(
+    session: Session, file_id: int, rows: list[dict[str, Any]]
+) -> list[Chapter]:
+    """Insert outline rows and resolve the tree. Each row carries ``parent_ord`` (the ``ord`` of
+    its parent, or None); parents are linked after the flush assigns ids. Returns the persisted
+    Chapter objects (with ids), in input order."""
+    chapters = [
+        Chapter(
+            file_id=file_id,
+            level=r["level"],
+            ord=r["ord"],
+            title=r["title"],
+            page_start=r["page_start"],
+            page_end=r["page_end"],
+            source=r.get("source", "outline"),
+        )
+        for r in rows
+    ]
+    session.add_all(chapters)
+    session.flush()  # assign ids
+    ord_to_id = {c.ord: c.id for c in chapters}
+    for row, chapter in zip(rows, chapters):
+        parent_ord = row.get("parent_ord")
+        if parent_ord is not None:
+            chapter.parent_id = ord_to_id.get(parent_ord)
+    session.flush()
+    return chapters
+
+
+def insert_chunks(session: Session, file_id: int, rows: list[dict[str, Any]]) -> None:
+    if rows:
+        session.execute(insert(Chunk), [{"file_id": file_id, **r} for r in rows])
+
+
+def insert_links(session: Session, file_id: int, rows: list[dict[str, Any]]) -> None:
+    if rows:
+        session.execute(insert(Link), [{"file_id": file_id, **r} for r in rows])
+
+
+def get_chapters(session: Session, file_id: int) -> list[Chapter]:
+    return list(
+        session.scalars(
+            select(Chapter).where(Chapter.file_id == file_id).order_by(Chapter.ord)
+        )
+    )

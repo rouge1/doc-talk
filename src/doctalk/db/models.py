@@ -16,7 +16,10 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     Enum,
+    Float,
+    ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
     Text,
@@ -95,3 +98,68 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (Index("ix_jobs_hash_stage", "content_hash", "stage"),)
+
+
+# --- Phase 1: document structure (all join back to files by file_id) -------
+
+
+class Chapter(Base):
+    """A node in a document's outline tree. ``parent_id`` gives the hierarchy; ``ord`` is the
+    document (TOC) order; ``page_start``/``page_end`` bound the section for navigation."""
+
+    __tablename__ = "chapters"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chapters.id", ondelete="CASCADE"), nullable=True
+    )
+    level: Mapped[int] = mapped_column(Integer)
+    ord: Mapped[int] = mapped_column(Integer)          # position in TOC / document order
+    title: Mapped[str] = mapped_column(String(1024))
+    page_start: Mapped[int] = mapped_column(Integer)   # 1-based, human/citation facing
+    page_end: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(16), default="outline")  # outline|heading_detect
+
+    __table_args__ = (Index("ix_chapters_file_ord", "file_id", "ord"),)
+
+
+class Chunk(Base):
+    """Retrieval unit for chat. Carries file/chapter/page so an answer can cite a real location."""
+
+    __tablename__ = "chunks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    chapter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    page: Mapped[int] = mapped_column(Integer)         # 1-based
+    ord: Mapped[int] = mapped_column(Integer)          # global chunk order within the file
+    text: Mapped[str] = mapped_column(Text)
+    char_count: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (Index("ix_chunks_file_page", "file_id", "page"),)
+
+
+class Link(Base):
+    """A cross-reference. Phase 1 fills ``internal_pdf`` (resolved PDF GOTO links); Phase 2 adds
+    semantic / shared-geo / shared-time / figure_ref kinds."""
+
+    __tablename__ = "links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    src_page: Mapped[int] = mapped_column(Integer)
+    dst_page: Mapped[int] = mapped_column(Integer)
+    src_chapter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True
+    )
+    dst_chapter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True
+    )
+    target_label: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    score: Mapped[float] = mapped_column(Float, default=1.0)
+
+    __table_args__ = (Index("ix_links_file_kind", "file_id", "kind"),)
