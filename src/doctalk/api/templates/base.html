@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>doctalk{% block title %}{% endblock %}</title>
+  <style>
+    :root { --fg:#1c1c1e; --muted:#6b6b70; --line:#e3e3e6; --accent:#2a5db0; --bg:#fafafa; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+           color:var(--fg); background:var(--bg); }
+    nav { background:#fff; border-bottom:1px solid var(--line); padding:.7rem 1.2rem;
+          position:sticky; top:0; display:flex; gap:1rem; align-items:center; }
+    nav a { text-decoration:none; color:var(--muted); }
+    nav a.brand { font-weight:700; color:var(--fg); margin-right:.4rem; }
+    nav a:hover { color:var(--accent); }
+    main { max-width:920px; margin:1.6rem auto; padding:0 1.2rem; }
+    h1 { font-size:1.4rem; } h2 { font-size:1.1rem; margin-top:1.6rem; }
+    a { color:var(--accent); }
+    .muted { color:var(--muted); font-size:.86rem; }
+    form.q { display:flex; gap:.5rem; margin:1rem 0 1.4rem; flex-wrap:wrap; }
+    form.q input[type=text]{ flex:1; min-width:240px; padding:.55rem .7rem; border:1px solid var(--line);
+                             border-radius:8px; font-size:1rem; }
+    form.q input[type=number]{ width:110px; padding:.55rem; border:1px solid var(--line); border-radius:8px; }
+    button { padding:.55rem 1rem; border:0; border-radius:8px; background:var(--accent); color:#fff;
+             font-size:.95rem; cursor:pointer; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:.9rem 1rem; margin:.7rem 0; }
+    .score { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:600; }
+    .crumb { font-size:.8rem; color:var(--muted); }
+    ul.tree { list-style:none; padding-left:0; }
+    ul.tree li { margin:.12rem 0; }
+    pre.chunk { white-space:pre-wrap; background:#fff; border:1px solid var(--line); border-radius:8px;
+                padding:.7rem .9rem; font:13px/1.5 ui-monospace,Menlo,monospace; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:1rem; }
+    .grid figure { margin:0; background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+    .grid img { width:100%; height:150px; object-fit:contain; background:#f0f0f2; display:block; }
+    .grid figcaption { padding:.55rem .7rem; font-size:.8rem; }
+    .answer { white-space:pre-wrap; background:#fff; border:1px solid var(--line); border-radius:10px;
+              padding:1rem 1.1rem; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="brand" href="/">doctalk</a>
+    <a href="/">Home</a>
+    <a href="/search">Search</a>
+    <a href="/chat">Chat</a>
+    <a href="/gallery">Gallery</a>
+  </nav>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

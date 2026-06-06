@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %} · {{ name }}{% endblock %}
+{% block content %}
+  <p class="crumb"><a href="/">Home</a> / {{ name }}</p>
+  <h1>{{ name }}</h1>
+  {% if chapters %}
+    <p class="muted">{{ chapters|length }} chapters — click to read.</p>
+    <ul class="tree">
+      {% for c in chapters %}
+        <li style="padding-left:{{ (c.level - 1) * 1.2 }}rem">
+          <a href="/doc/{{ hash }}/chapter/{{ c.id }}">{{ c.title }}</a>
+          <span class="muted">· p.{{ c.page }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No outline for this document.</p>
+  {% endif %}
+{% endblock %}

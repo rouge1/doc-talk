@@ -239,6 +239,18 @@ def find(
             typer.echo(f"      {h.description[:140].strip()}")
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="bind address"),
+    port: int = typer.Option(8000, help="port"),
+) -> None:
+    """Run the Phase 1 web UI (FastAPI + Jinja) at http://host:port."""
+    import uvicorn
+
+    typer.echo(f"doctalk web UI → http://{host}:{port}")
+    uvicorn.run("doctalk.api.app:app", host=host, port=port)
+
+
 def main() -> None:
     app()
 

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %} · gallery{% endblock %}
+{% block content %}
+  <h1>Gallery</h1>
+  <form class="q" method="get" action="/gallery">
+    <input type="text" name="q" value="{{ q }}" placeholder="text→image search (e.g. a cat) — blank lists all">
+    <input type="text" name="fmt" value="{{ fmt or '' }}" placeholder="format" style="max-width:90px">
+    <input type="number" name="min_kb" value="{{ min_kb or '' }}" placeholder="min KB" step="1">
+    <button type="submit">Find</button>
+  </form>
+  {% if items %}
+    <div class="grid">
+      {% for it in items %}
+        <figure>
+          <img src="/image/{{ it.file_id }}" alt="{{ it.name }}" loading="lazy">
+          <figcaption>
+            {% if it.score is not none %}<span class="score">{{ "%.3f"|format(it.score) }}</span> {% endif %}
+            <strong>{{ it.name }}</strong>
+            <div class="muted">{{ it.fmt }} · {{ it.kb }}KB{% if it.when %} · {{ it.when }}{% endif %}{% if it.geo %} · {{ it.geo }}{% endif %}</div>
+            {% if it.desc %}<div>{{ it.desc[:120] }}</div>{% endif %}
+          </figcaption>
+        </figure>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No images match. Ingest some, or clear the filters.</p>
+  {% endif %}
+{% endblock %}

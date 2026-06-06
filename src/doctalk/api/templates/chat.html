@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %} · chat{% endblock %}
+{% block content %}
+  <h1>Chat with your documents</h1>
+  <form class="q" method="get" action="/chat">
+    <input type="text" name="q" value="{{ q }}" placeholder="ask a question grounded in the corpus…" autofocus>
+    <button type="submit">Ask</button>
+  </form>
+  <p class="muted">Answers run on a local model and may take ~a minute.</p>
+  {% if result %}
+    <div class="answer">{{ result.answer }}</div>
+    {% if result.citations %}
+      <h2>Sources</h2>
+      {% for c in result.citations %}
+        <div class="muted">[{{ c.n }}] {{ c.file }} · {{ c.chapter or "n/a" }} · p.{{ c.page }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+{% endblock %}

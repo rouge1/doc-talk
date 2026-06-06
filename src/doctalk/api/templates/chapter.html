@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %} · {{ title }}{% endblock %}
+{% block content %}
+  <p class="crumb"><a href="/">Home</a> / <a href="/doc/{{ hash }}">document</a> / {{ title }}</p>
+  <h1>{{ title }}</h1>
+  <p class="muted">starts on p.{{ page }} · {{ chunks|length }} chunk(s)</p>
+  {% for ck in chunks %}
+    <div class="muted">p.{{ ck.page }}</div>
+    <pre class="chunk">{{ ck.text }}</pre>
+  {% else %}
+    <p class="muted">No text chunks under this chapter.</p>
+  {% endfor %}
+{% endblock %}

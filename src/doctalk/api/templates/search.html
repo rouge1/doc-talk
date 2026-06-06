@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %} · search{% endblock %}
+{% block content %}
+  <h1>Search documents</h1>
+  <form class="q" method="get" action="/search">
+    <input type="text" name="q" value="{{ q }}" placeholder="semantic search over document text…" autofocus>
+    <button type="submit">Search</button>
+  </form>
+  {% if q %}
+    {% if hits %}
+      {% for h in hits %}
+        <div class="card">
+          <span class="score">{{ "%.3f"|format(h.score) }}</span>
+          <span class="muted">{{ h.file }} · {{ h.chapter or "n/a" }} · p.{{ h.page }}</span>
+          <div>{{ h.text[:280] }}…</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No results (is the text index built? <code>doctalk rebuild-index</code>).</p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

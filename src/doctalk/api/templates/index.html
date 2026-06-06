@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>doctalk</h1>
+  <p class="muted">Drop files → browse, search, and chat with citations. Fully local.</p>
+
+  <h2>Documents</h2>
+  {% if docs %}
+    {% for d in docs %}
+      <div class="card">
+        <a href="/doc/{{ d.hash }}">{{ d.name }}</a>
+        <div class="muted">{{ d.chapters }} chapters · {{ d.chunks }} chunks</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No documents ingested yet. Run <code>doctalk ingest &lt;file&gt;</code>.</p>
+  {% endif %}
+
+  <h2>Images</h2>
+  <p>{{ images_count }} image(s) ingested — <a href="/gallery">open the gallery →</a></p>
+{% endblock %}
