@@ -16,7 +16,7 @@ import typer
 from sqlalchemy import func, select
 
 from doctalk.db import repo
-from doctalk.db.models import Base, Chapter, Chunk, File, Job, JobStatus, Link
+from doctalk.db.models import Base, Chapter, Chunk, File, Image, Job, JobStatus, Link
 from doctalk.db.session import get_engine, session_scope
 from doctalk.hashing import hash_file
 from doctalk.ingest.dag import run_dag
@@ -32,12 +32,7 @@ def initdb() -> None:
     typer.echo("Created tables from models.")
 
 
-@app.command()
-def ingest(path: Path) -> None:
-    """Ingest one file: hash -> upsert -> run the DAG."""
-    if not path.is_file():
-        raise typer.BadParameter(f"not a file: {path}")
-
+def _ingest_one(path: Path) -> None:
     content_hash = hash_file(path)
     fmt = path.suffix.lstrip(".").lower()
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -61,10 +56,31 @@ def ingest(path: Path) -> None:
 
 
 @app.command()
+def ingest(path: Path) -> None:
+    """Ingest a file, or every file in a directory: hash -> upsert -> run the DAG."""
+    if path.is_dir():
+        files = sorted(p for p in path.iterdir() if p.is_file() and not p.name.startswith("."))
+        if not files:
+            raise typer.BadParameter(f"no files in directory: {path}")
+        for f in files:
+            _ingest_one(f)
+    elif path.is_file():
+        _ingest_one(path)
+    else:
+        raise typer.BadParameter(f"not a file or directory: {path}")
+
+
+@app.command()
 def stats() -> None:
     """Print counts: files, jobs by status, and extracted structure."""
     with session_scope() as session:
-        for table, label in ((File, "files"), (Chapter, "chapters"), (Chunk, "chunks"), (Link, "links")):
+        for table, label in (
+            (File, "files"),
+            (Chapter, "chapters"),
+            (Chunk, "chunks"),
+            (Link, "links"),
+            (Image, "images"),
+        ):
             n = session.scalar(select(func.count()).select_from(table))
             typer.echo(f"{label:<9} {n}")
         rows = session.execute(select(Job.status, func.count()).group_by(Job.status)).all()
@@ -180,6 +196,47 @@ def rebuild_index() -> None:
             )
             total += len(chunks)
     typer.echo(f"rebuilt text index: {total} chunks")
+
+
+@app.command()
+def find(
+    query: str = typer.Argument("", help="semantic text for CLIP (empty = metadata-only listing)"),
+    format: str = typer.Option(None, help="image format, e.g. png / jpg"),
+    min_kb: float = typer.Option(None, help="minimum size in KB"),
+    max_kb: float = typer.Option(None, help="maximum size in KB"),
+    country: str = typer.Option(None, help="geo country code, e.g. CA"),
+    year: int = typer.Option(None, help="filter by capture year (EXIF)"),
+    month: int = typer.Option(None, help="filter by capture month (1-12); requires --year"),
+    k: int = typer.Option(10, help="max results"),
+) -> None:
+    """Hybrid image search: metadata filter (format/size/geo/time) + optional CLIP semantic rank."""
+    from doctalk.query.hybrid import ImageFilter, find_images, list_images, month_range
+
+    ts_from = ts_to = None
+    if year is not None:
+        ts_from, ts_to = month_range(year, month)
+    filt = ImageFilter(
+        format=format,
+        min_bytes=int(min_kb * 1024) if min_kb is not None else None,
+        max_bytes=int(max_kb * 1024) if max_kb is not None else None,
+        geo_country=country,
+        ts_from=ts_from,
+        ts_to=ts_to,
+    )
+
+    hits = find_images(query, filt, k=k) if query.strip() else list_images(filt, limit=k)
+    if not hits:
+        typer.echo("(no matching images)")
+        return
+    for h in hits:
+        score = f"{h.score:.3f}  " if h.score is not None else ""
+        when = h.exif_datetime.date().isoformat() if h.exif_datetime else "—"
+        geo = h.geo_country or "—"
+        typer.echo(
+            f"{score}{h.filename}  [{h.format} · {h.byte_size // 1024}KB · {geo} · {when}]"
+        )
+        if h.description:
+            typer.echo(f"      {h.description[:140].strip()}")
 
 
 def main() -> None:

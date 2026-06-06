@@ -14,6 +14,7 @@ from typing import Any
 from doctalk.config import get_settings
 
 TEXT_TABLE = "text_chunks"
+IMAGE_TABLE = "images"
 NO_CHAPTER = -1  # null sentinel for chapter_id
 
 
@@ -79,4 +80,60 @@ def search_text(query_vector: list[float], k: int, file_id: int | None = None) -
     query = db.open_table(TEXT_TABLE).search(query_vector).metric("cosine").limit(k)
     if file_id is not None:
         query = query.where(f"file_id = {file_id}", prefilter=True)
+    return query.to_list()
+
+
+# --- image index (text->image hybrid search) -------------------------------
+# Mirrors the scalars hybrid queries prefilter on: format, byte_size, geo_country, exif_ts.
+# geo_country uses "" and exif_ts uses 0 as null sentinels (Lance filter scalars are non-null).
+NO_GEO = ""
+NO_TS = 0
+
+
+def _ensure_image_table(dim: int):
+    import pyarrow as pa
+
+    db = _db()
+    if IMAGE_TABLE not in db.table_names():
+        schema = pa.schema(
+            [
+                ("file_id", pa.int64()),
+                ("format", pa.string()),
+                ("byte_size", pa.int64()),
+                ("geo_country", pa.string()),
+                ("exif_ts", pa.int64()),
+                ("vector", pa.list_(pa.float32(), dim)),
+            ]
+        )
+        db.create_table(IMAGE_TABLE, schema=schema)
+    return db.open_table(IMAGE_TABLE)
+
+
+def add_images(rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    table = _ensure_image_table(len(rows[0]["vector"]))
+    table.add(rows)
+
+
+def delete_file_images(file_id: int) -> None:
+    db = _db()
+    if IMAGE_TABLE in db.table_names():
+        db.open_table(IMAGE_TABLE).delete(f"file_id = {file_id}")
+
+
+def drop_image_table() -> None:
+    db = _db()
+    if IMAGE_TABLE in db.table_names():
+        db.drop_table(IMAGE_TABLE)
+
+
+def search_images(query_vector: list[float], k: int, where: str | None = None) -> list[dict]:
+    """CLIP text->image ANN search with an optional metadata prefilter (a Lance SQL predicate)."""
+    db = _db()
+    if IMAGE_TABLE not in db.table_names():
+        return []
+    query = db.open_table(IMAGE_TABLE).search(query_vector).metric("cosine").limit(k)
+    if where:
+        query = query.where(where, prefilter=True)
     return query.to_list()

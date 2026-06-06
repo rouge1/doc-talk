@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     vlm_model: str = "llama3.2-vision"
     chat_model: str = "gemma4:e2b"
     embed_text_model: str = "BAAI/bge-small-en-v1.5"
-    embed_image_model: str = "ViT-H-14"
+    # CLIP ViT-B-32 via fastembed (ONNX, no torch); matched image + text towers share a 512-d space.
+    clip_image_model: str = "Qdrant/clip-ViT-B-32-vision"
+    clip_text_model: str = "Qdrant/clip-ViT-B-32-text"
 
     # --- Serving / retrieval ----------------------------------------------
     ollama_host: str = "http://127.0.0.1:11434"

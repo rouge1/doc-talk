@@ -34,3 +34,32 @@ def embed_passages(texts: list[str]) -> list[list[float]]:
 def embed_query(text: str) -> list[float]:
     """Embed a search query (bge query-instruction prefix applied)."""
     return next(iter(_embedder().query_embed([text], parallel=None))).tolist()
+
+
+# --- CLIP cross-modal (text -> image search) -------------------------------
+
+
+@lru_cache
+def _clip_image():
+    from fastembed import ImageEmbedding  # lazy
+
+    settings = get_settings()
+    return ImageEmbedding(model_name=settings.clip_image_model, threads=settings.embed_threads)
+
+
+@lru_cache
+def _clip_text():
+    from fastembed import TextEmbedding  # lazy
+
+    settings = get_settings()
+    return TextEmbedding(model_name=settings.clip_text_model, threads=settings.embed_threads)
+
+
+def embed_images(paths: list[str]) -> list[list[float]]:
+    """Embed image files with the CLIP vision tower (inline; see embed_passages on parallel)."""
+    return [vec.tolist() for vec in _clip_image().embed(list(paths), parallel=None)]
+
+
+def embed_image_query(text: str) -> list[float]:
+    """Embed a text query into CLIP's shared space, for text->image retrieval."""
+    return next(iter(_clip_text().embed([text], parallel=None))).tolist()

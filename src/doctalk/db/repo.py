@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from doctalk.db.models import Chapter, Chunk, File, Job, JobStatus, Link, utcnow
+from doctalk.db.models import Chapter, Chunk, File, Image, Job, JobStatus, Link, utcnow
 
 
 # --- files -----------------------------------------------------------------
@@ -192,3 +192,26 @@ def get_chunks(session: Session, file_id: int) -> list[Chunk]:
 
 def get_all_file_ids(session: Session) -> list[int]:
     return list(session.scalars(select(File.id).order_by(File.id)))
+
+
+# --- images ----------------------------------------------------------------
+
+
+def upsert_image(session: Session, file_id: int, **fields: Any) -> Image:
+    """Create-or-update the images row for a file, setting only the provided fields. Lets the
+    image stages (extract -> exif_geo -> vlm_describe) each contribute their slice idempotently."""
+    image = session.scalar(select(Image).where(Image.file_id == file_id))
+    if image is None:
+        image = Image(file_id=file_id)
+        session.add(image)
+    for key, value in fields.items():
+        setattr(image, key, value)
+    return image
+
+
+def get_image(session: Session, file_id: int) -> Image | None:
+    return session.scalar(select(Image).where(Image.file_id == file_id))
+
+
+def get_all_image_file_ids(session: Session) -> list[int]:
+    return list(session.scalars(select(Image.file_id).order_by(Image.file_id)))

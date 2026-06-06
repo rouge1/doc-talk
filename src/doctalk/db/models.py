@@ -163,3 +163,29 @@ class Link(Base):
     score: Mapped[float] = mapped_column(Float, default=1.0)
 
     __table_args__ = (Index("ix_links_file_kind", "file_id", "kind"),)
+
+
+class Image(Base):
+    """Per-image derived metadata for a standalone photo (or, later, a figure extracted from a
+    PDF). One row per image file, joined to ``files`` by ``file_id``. Format/byte_size live on the
+    file; this holds the image-specific signals the gallery + hybrid search need."""
+
+    __tablename__ = "images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(
+        ForeignKey("files.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vlm_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exif_datetime: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    gps_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geo_country: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    geo_place: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_floorplan: Mapped[bool] = mapped_column(default=False)
+    cluster_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Phase 2
+
+    __table_args__ = (Index("ix_images_geo_time", "geo_country", "exif_datetime"),)
