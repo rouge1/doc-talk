@@ -3,7 +3,26 @@
 {% block content %}
   <p class="crumb"><a href="/">Home</a> / <a href="/doc/{{ hash }}">document</a> / {{ title }}</p>
   <h1>{{ title }}</h1>
-  <p class="muted">starts on p.{{ page }} · {{ chunks|length }} chunk(s)</p>
+  <p class="muted">starts on p.{{ page }} · {{ chunks|length }} chunk(s)
+    {% if assets %}· {{ assets|length }} table(s)/figure(s){% endif %}</p>
+
+  {% if assets %}
+    <h2>Tables &amp; figures</h2>
+    {% for a in assets %}
+      <div class="card">
+        <div class="muted">{{ a.kind|upper }} · p.{{ a.page }}{% if a.caption %} · {{ a.caption }}{% endif %}</div>
+        {% if a.kind == "table" and a.table_md %}
+          <pre class="chunk">{{ a.table_md }}</pre>
+        {% elif a.kind == "figure" %}
+          <img src="/figure/{{ a.id }}" alt="figure on p.{{ a.page }}"
+               style="max-width:100%; border:1px solid var(--line); border-radius:8px; background:#f0f0f2;">
+        {% endif %}
+        {% if a.ocr %}<div class="muted">OCR: {{ a.ocr[:300] }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    <h2>Text</h2>
+  {% endif %}
+
   {% for ck in chunks %}
     <div class="muted">p.{{ ck.page }}</div>
     <pre class="chunk">{{ ck.text }}</pre>

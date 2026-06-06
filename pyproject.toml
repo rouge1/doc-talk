@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.4", "mypy>=1.10"]
 geo = ["reverse_geocoder>=1.5"]  # offline GPS->country; only needed for geotagged photos
+ocr = ["pytesseract>=0.3"]       # local OCR; also needs the system `tesseract` binary on PATH
 
 [project.scripts]
 doctalk = "doctalk.cli.main:main"

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     watched_dir: Path = Path("inbox")      # drop files here
     wiki_dir: Path = Path("wiki")          # Phase 4 synthesis git repo
     lance_dir: Path = Path("data/lance")   # derived vector index
+    figures_dir: Path = Path("data/figures")  # extracted PDF figure rasters (derived)
 
     # --- Hardware budget ---------------------------------------------------
     vram_budget_gb: int = 8                # RTX 3070 Ti Laptop wall; one model resident at a time
@@ -43,6 +44,11 @@ class Settings(BaseSettings):
     # --- Serving / retrieval ----------------------------------------------
     ollama_host: str = "http://127.0.0.1:11434"
     retrieval_top_k: int = 8
+
+    # --- Asset extraction (figures / tables / OCR) -------------------------
+    # Embedded rasters smaller than this on either side are icons/rules, not figures — skipped.
+    figure_min_px: int = 64
+    ocr_lang: str = "eng"                  # Tesseract language pack(s), e.g. "eng+fra"
 
     # --- Embedding throughput ---------------------------------------------
     # fastembed's multiprocessing path either fans out to all cores (~9 GB RSS) or deadlocks on

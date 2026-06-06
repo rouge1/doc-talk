@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from doctalk.db import repo
-from doctalk.db.models import Chapter, Chunk, File, Image
+from doctalk.db.models import Chapter, Chunk, Figure, File
 from doctalk.db.session import session_scope
 from doctalk.ingest.pipeline import IMAGE_FORMATS
 
@@ -64,17 +64,37 @@ def chapter(request: Request, content_hash: str, chapter_id: int):
         c = s.get(Chapter, chapter_id)
         if c is None:
             return HTMLResponse("chapter not found", status_code=404)
-        title, page = c.title, c.page_start
+        title, page, page_end = c.title, c.page_start, c.page_end
         chunks = [
             {"page": ck.page, "text": ck.text}
             for ck in s.scalars(
                 select(Chunk).where(Chunk.chapter_id == chapter_id).order_by(Chunk.ord)
             )
         ]
+        # Tables/figures whose page falls inside this section's range.
+        assets = [
+            {
+                "id": fig.id,
+                "kind": fig.kind,
+                "page": fig.page,
+                "table_md": fig.table_md,
+                "ocr": fig.ocr_text,
+                "caption": fig.caption,
+            }
+            for fig in s.scalars(
+                select(Figure)
+                .where(
+                    Figure.file_id == c.file_id,
+                    Figure.page >= page,
+                    Figure.page <= page_end,
+                )
+                .order_by(Figure.ord)
+            )
+        ]
     return templates.TemplateResponse(
         request,
         "chapter.html",
-        {"hash": content_hash, "title": title, "page": page, "chunks": chunks},
+        {"hash": content_hash, "title": title, "page": page, "chunks": chunks, "assets": assets},
     )
 
 
@@ -135,3 +155,14 @@ def image(file_id: int):
             return HTMLResponse("image not found", status_code=404)
         path, mime = f.path, f.mime
     return FileResponse(path, media_type=mime)
+
+
+@app.get("/figure/{figure_id}")
+def figure(figure_id: int):
+    """Serve an extracted PDF figure raster from ``figures_dir``."""
+    with session_scope() as s:
+        fig = s.get(Figure, figure_id)
+        if fig is None or not fig.image_path or not Path(fig.image_path).is_file():
+            return HTMLResponse("figure not found", status_code=404)
+        path = fig.image_path
+    return FileResponse(path)

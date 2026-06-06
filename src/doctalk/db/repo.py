@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from doctalk.db.models import Chapter, Chunk, File, Image, Job, JobStatus, Link, utcnow
+from doctalk.db.models import Chapter, Chunk, Figure, File, Image, Job, JobStatus, Link, utcnow
 
 
 # --- files -----------------------------------------------------------------
@@ -192,6 +192,59 @@ def get_chunks(session: Session, file_id: int) -> list[Chunk]:
 
 def get_all_file_ids(session: Session) -> list[int]:
     return list(session.scalars(select(File.id).order_by(File.id)))
+
+
+# --- figures / tables ------------------------------------------------------
+
+
+def clear_figures_for_file(session: Session, file_id: int) -> None:
+    session.execute(delete(Figure).where(Figure.file_id == file_id))
+
+
+def insert_figures(session: Session, file_id: int, rows: list[dict[str, Any]]) -> None:
+    if rows:
+        session.execute(insert(Figure), [{"file_id": file_id, **r} for r in rows])
+
+
+def get_figures(session: Session, file_id: int) -> list[Figure]:
+    return list(
+        session.scalars(select(Figure).where(Figure.file_id == file_id).order_by(Figure.ord))
+    )
+
+
+def get_figures_for_page(session: Session, file_id: int, page: int) -> list[Figure]:
+    return list(
+        session.scalars(
+            select(Figure)
+            .where(Figure.file_id == file_id, Figure.page == page)
+            .order_by(Figure.ord)
+        )
+    )
+
+
+def get_figure(session: Session, figure_id: int) -> Figure | None:
+    return session.get(Figure, figure_id)
+
+
+def figures_needing_ocr(session: Session, file_id: int) -> list[Figure]:
+    """Figure rasters (have an ``image_path``) whose ``ocr_text`` has not been set yet."""
+    return list(
+        session.scalars(
+            select(Figure).where(
+                Figure.file_id == file_id,
+                Figure.image_path.is_not(None),
+                Figure.ocr_text.is_(None),
+            )
+        )
+    )
+
+
+def set_figure_fields(session: Session, figure_id: int, **fields: Any) -> None:
+    figure = session.get(Figure, figure_id)
+    if figure is None:  # pragma: no cover - defensive
+        raise ValueError(f"set_figure_fields: no figure row id={figure_id}")
+    for key, value in fields.items():
+        setattr(figure, key, value)
 
 
 # --- images ----------------------------------------------------------------

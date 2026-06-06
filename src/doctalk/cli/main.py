@@ -16,7 +16,7 @@ import typer
 from sqlalchemy import func, select
 
 from doctalk.db import repo
-from doctalk.db.models import Base, Chapter, Chunk, File, Image, Job, JobStatus, Link
+from doctalk.db.models import Base, Chapter, Chunk, Figure, File, Image, Job, JobStatus, Link
 from doctalk.db.session import get_engine, session_scope
 from doctalk.hashing import hash_file
 from doctalk.ingest.dag import run_dag
@@ -79,6 +79,7 @@ def stats() -> None:
             (Chapter, "chapters"),
             (Chunk, "chunks"),
             (Link, "links"),
+            (Figure, "figures"),
             (Image, "images"),
         ):
             n = session.scalar(select(func.count()).select_from(table))
@@ -117,6 +118,35 @@ def outline(target: str, max_depth: int = typer.Option(3, help="deepest heading 
         for c in chapters:
             if c.level <= max_depth:
                 typer.echo("  " * (c.level - 1) + f"{c.title}  · p.{c.page_start}")
+
+
+@app.command()
+def figures(
+    target: str,
+    kind: str = typer.Option(None, help="restrict to 'table' or 'figure'"),
+) -> None:
+    """List the tables and figures extracted from a document. TARGET is a path or content_hash."""
+    with session_scope() as session:
+        content_hash = _resolve_hash(session, target)
+        file = repo.get_file(session, content_hash)
+        if file is None:
+            raise typer.BadParameter(f"{target!r} is not ingested yet")
+        rows = repo.get_figures(session, file.id)
+        if kind:
+            rows = [r for r in rows if r.kind == kind]
+        if not rows:
+            typer.echo("(no figures/tables — not extracted yet, or none found)")
+            return
+        for r in rows:
+            tag = r.kind.upper()
+            typer.echo(f"[{tag}] p.{r.page}" + (f"  {r.width}x{r.height}" if r.width else ""))
+            if r.table_md:
+                first = r.table_md.strip().splitlines()[0][:100]
+                typer.echo(f"      {first}…")
+            if r.image_path:
+                typer.echo(f"      {r.image_path}")
+            if r.ocr_text:
+                typer.echo(f"      ocr: {r.ocr_text[:100].replace(chr(10), ' ').strip()}…")
 
 
 def _target_file_id(target: str | None) -> int | None:

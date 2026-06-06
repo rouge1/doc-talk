@@ -26,6 +26,7 @@ htmlcov/
 # Derived data stores (regenerable from MySQL — never the source of truth)
 *.lance/
 data/lance/
+data/figures/
 
 # OS / editor cruft
 .DS_Store

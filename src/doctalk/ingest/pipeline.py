@@ -13,6 +13,8 @@ from doctalk.ingest.stages import (
     identify,
     image_extract,
     link_internal,
+    ocr,
+    pdf_assets,
     pdf_structure,
     vlm_describe,
 )
@@ -43,11 +45,27 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 model_version="bge-small-en-v1.5",
                 deps=("pdf_structure",),
             ),
+            # Tables -> markdown + embedded figure rasters -> disk (PyMuPDF; needs page count only).
+            Stage(
+                "pdf_assets",
+                pdf_assets.run,
+                model_version="pymupdf-1",
+                deps=("pdf_structure",),
+            ),
+            # OCR the extracted figure rasters (diagram labels). Graceful if tesseract is absent.
+            Stage(
+                "figure_ocr",
+                ocr.run_figures,
+                model_version="tesseract-1",
+                deps=("pdf_assets",),
+            ),
         ]
     elif file_format in IMAGE_FORMATS:
         stages += [
             Stage("image_extract", image_extract.run, deps=("identify",)),
             Stage("exif_geo", exif_geo.run, deps=("image_extract",)),
+            # Read any embedded text (screenshots, scans). Graceful if tesseract is absent.
+            Stage("ocr", ocr.run_image, model_version="tesseract-1", deps=("image_extract",)),
             # embed_image mirrors exif/geo scalars into Lance, so it runs after exif_geo.
             Stage(
                 "embed_image",

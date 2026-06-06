@@ -165,6 +165,31 @@ class Link(Base):
     __table_args__ = (Index("ix_links_file_kind", "file_id", "kind"),)
 
 
+class Figure(Base):
+    """A figure or table extracted from a document page. Tables carry ``table_md`` (PyMuPDF
+    markdown); figures carry an ``image_path`` to the raster on disk (under ``figures_dir``).
+    Both can gain a ``vlm_description`` (later batch) and ``ocr_text`` (Tesseract). Joins back to
+    ``files`` by ``file_id`` and to a page; the chapter is derivable from the page via the outline."""
+
+    __tablename__ = "figures"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    page: Mapped[int] = mapped_column(Integer)          # 1-based
+    kind: Mapped[str] = mapped_column(String(16))       # "figure" | "table"
+    ord: Mapped[int] = mapped_column(Integer)           # extraction order within the file
+    bbox: Mapped[str | None] = mapped_column(String(64), nullable=True)  # "x0,y0,x1,y1"
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)  # figures only
+    table_md: Mapped[str | None] = mapped_column(Text, nullable=True)            # tables only
+    caption: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    vlm_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_figures_file_page", "file_id", "page"),)
+
+
 class Image(Base):
     """Per-image derived metadata for a standalone photo (or, later, a figure extracted from a
     PDF). One row per image file, joined to ``files`` by ``file_id``. Format/byte_size live on the
