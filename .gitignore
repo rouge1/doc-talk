@@ -27,6 +27,8 @@ htmlcov/
 *.lance/
 data/lance/
 data/figures/
+# local SQLite dev truth store (DOCTALK_DB_URL=sqlite:///dev.db)
+*.db
 
 # OS / editor cruft
 .DS_Store

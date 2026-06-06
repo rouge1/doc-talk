@@ -121,12 +121,26 @@ def chat(request: Request, q: str = ""):
     return templates.TemplateResponse(request, "chat.html", {"q": q, "result": result})
 
 
+def _opt_float(raw: str) -> float | None:
+    """Parse an optional numeric query param. Forms submit empty fields as ``""`` (not absent),
+    which a ``float`` param would reject with a 422 — so we take ``str`` and coerce, treating
+    blank or non-numeric input as "no filter" rather than an error."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 @app.get("/gallery", response_class=HTMLResponse)
-def gallery(request: Request, q: str = "", fmt: str = "", min_kb: float | None = None):
+def gallery(request: Request, q: str = "", fmt: str = "", min_kb: str = ""):
     from doctalk.query.hybrid import ImageFilter, find_images, list_images
 
+    min_kb_val = _opt_float(min_kb)
     filt = ImageFilter(
-        format=fmt or None, min_bytes=int(min_kb * 1024) if min_kb else None
+        format=fmt or None, min_bytes=int(min_kb_val * 1024) if min_kb_val else None
     )
     hits = find_images(q, filt, k=24) if q.strip() else list_images(filt, limit=48)
     items = [
