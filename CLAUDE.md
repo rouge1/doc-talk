@@ -48,13 +48,26 @@ link down to chunks. `rebuild-index` never touches `wiki/`; only the last-resort
 
 ## Commands
 
-_To be filled in once Phase 0–1 exist. Expected shape:_
+**Env (Phase 0).** `conda create -y -n doctalk python=3.12 pip && conda activate doctalk` then
+`pip install -e ".[dev]"` from the repo root. (Phase 1+ also needs Ollama with
+`OLLAMA_MAX_LOADED_MODELS=1`, MySQL, and Redis up.)
 
-- Env: conda/venv for `doctalk`; Ollama running with `OLLAMA_MAX_LOADED_MODELS=1`; MySQL + Redis up.
-- `doctalk ingest <dir>` · `doctalk rebuild-index` · `doctalk stats`
-- Phase 4: `doctalk wiki-lint` · `doctalk wiki-audit` · `doctalk wiki-merge` · `doctalk wiki-bootstrap`
-- `alembic upgrade head` for schema.
-- Tests + lint command: TBD.
+**Truth store.** Config is env-driven with the `DOCTALK_` prefix; `DOCTALK_DB_URL` selects the
+database. Production = MySQL (the default URL); set `DOCTALK_DB_URL="sqlite:///$PWD/dev.db"` to run
+without a MySQL server (also what the test suite uses). `alembic upgrade head` creates/migrates the
+schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`).
+
+**Now (Phase 0):**
+- `doctalk initdb` — create tables from the models (dev shortcut; prefer `alembic upgrade head`).
+- `doctalk ingest <file>` — hash → upsert the `files` row → run the resumable DAG; re-drop is a no-op.
+- `doctalk stats` — file count + job counts by status.
+- `pytest -q` — Phase 0 verification (DAG idempotency + crash/resume), runs on a temp SQLite db.
+
+**Planned:** `doctalk rebuild-index` (Phase 1+); `doctalk wiki-lint` · `wiki-audit` · `wiki-merge` ·
+`wiki-bootstrap` (Phase 4).
+
+**Lint/type:** `ruff check .` · `mypy src` (dev extras). After Phase 1 lands real stages, re-run
+`/init` to refresh this section.
 
 ## Wiki conventions (Phase 4) — the synthesis schema
 
