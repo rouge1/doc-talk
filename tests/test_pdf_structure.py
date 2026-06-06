@@ -15,8 +15,17 @@ from doctalk.db import repo
 from doctalk.db.models import Chapter, Chunk, Link
 from doctalk.db.session import session_scope
 from doctalk.hashing import hash_file
-from doctalk.ingest.dag import run_dag
-from doctalk.ingest.pipeline import pipeline_for
+from doctalk.ingest.dag import Stage, run_dag
+from doctalk.ingest.stages import identify, link_internal, pdf_structure
+
+
+def _structure_stages() -> list[Stage]:
+    """Structure-only pipeline (no embed_text) — keeps these tests offline and focused."""
+    return [
+        Stage("identify", identify.run),
+        Stage("pdf_structure", pdf_structure.run, model_version="pymupdf-1", deps=("identify",)),
+        Stage("link_internal", link_internal.run, model_version="pymupdf-1", deps=("pdf_structure",)),
+    ]
 
 
 @pytest.fixture
@@ -49,7 +58,7 @@ def _ingest(path):
             mime="application/pdf",
             byte_size=path.stat().st_size,
         )
-    return content_hash, run_dag(content_hash, pipeline_for("pdf"), file_path=str(path))
+    return content_hash, run_dag(content_hash, _structure_stages(), file_path=str(path))
 
 
 def test_outline_chunks_and_xref(db, sample_pdf):

@@ -6,7 +6,7 @@ run ``identify`` only (their extractors land in Phase 1's image half and Phase 2
 from __future__ import annotations
 
 from doctalk.ingest.dag import Stage
-from doctalk.ingest.stages import identify, link_internal, pdf_structure
+from doctalk.ingest.stages import embed_text, identify, link_internal, pdf_structure
 
 
 def pipeline_for(file_format: str) -> list[Stage]:
@@ -23,6 +23,13 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 "link_internal",
                 link_internal.run,
                 model_version="pymupdf-1",
+                deps=("pdf_structure",),
+            ),
+            # Derived vector index; depends only on chunks, so it runs alongside link_internal.
+            Stage(
+                "embed_text",
+                embed_text.run,
+                model_version="bge-small-en-v1.5",
                 deps=("pdf_structure",),
             ),
         ]

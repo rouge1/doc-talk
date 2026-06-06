@@ -182,3 +182,13 @@ def get_chapters(session: Session, file_id: int) -> list[Chapter]:
             select(Chapter).where(Chapter.file_id == file_id).order_by(Chapter.ord)
         )
     )
+
+
+def get_chunks(session: Session, file_id: int) -> list[Chunk]:
+    return list(
+        session.scalars(select(Chunk).where(Chunk.file_id == file_id).order_by(Chunk.ord))
+    )
+
+
+def get_all_file_ids(session: Session) -> list[int]:
+    return list(session.scalars(select(File.id).order_by(File.id)))

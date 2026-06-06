@@ -15,9 +15,17 @@ from doctalk.db import repo
 from doctalk.db.models import Chapter, Chunk
 from doctalk.db.session import session_scope
 from doctalk.hashing import hash_file
-from doctalk.ingest.dag import run_dag
-from doctalk.ingest.pipeline import pipeline_for
+from doctalk.ingest.dag import Stage, run_dag
+from doctalk.ingest.stages import identify, link_internal, pdf_structure
 from doctalk.ingest.stages.heading_detect import detect_headings
+
+
+def _structure_stages() -> list[Stage]:
+    return [
+        Stage("identify", identify.run),
+        Stage("pdf_structure", pdf_structure.run, model_version="pymupdf-1", deps=("identify",)),
+        Stage("link_internal", link_internal.run, model_version="pymupdf-1", deps=("pdf_structure",)),
+    ]
 
 
 @pytest.fixture
@@ -65,7 +73,7 @@ def test_untoc_pdf_builds_tree_via_fallback(db, untoc_pdf):
             mime="application/pdf",
             byte_size=untoc_pdf.stat().st_size,
         )
-    results = run_dag(content_hash, pipeline_for("pdf"), file_path=str(untoc_pdf))
+    results = run_dag(content_hash, _structure_stages(), file_path=str(untoc_pdf))
     assert [r.status for r in results] == ["done", "done", "done"]
 
     with session_scope() as s:

@@ -32,10 +32,21 @@ class Settings(BaseSettings):
     vram_budget_gb: int = 8                # RTX 3070 Ti Laptop wall; one model resident at a time
 
     # --- Model names (see PLAN.md stack table) -----------------------------
-    vlm_model: str = "moondream2"
-    chat_model: str = "llama3.1:8b"
-    embed_text_model: str = "bge-large-en-v1.5"
+    # bge-small via fastembed (ONNX, CPU-fast, no torch) for Phase 1; swap to bge-large later.
+    vlm_model: str = "llama3.2-vision"
+    chat_model: str = "gemma4:e2b"
+    embed_text_model: str = "BAAI/bge-small-en-v1.5"
     embed_image_model: str = "ViT-H-14"
+
+    # --- Serving / retrieval ----------------------------------------------
+    ollama_host: str = "http://127.0.0.1:11434"
+    retrieval_top_k: int = 8
+
+    # --- Embedding throughput ---------------------------------------------
+    # fastembed's multiprocessing path either fans out to all cores (~9 GB RSS) or deadlocks on
+    # idle workers; we run inline (parallel=None) with a capped onnxruntime thread count instead.
+    embed_threads: int = 8
+    embed_batch_size: int = 256
 
 
 @lru_cache

@@ -103,6 +103,85 @@ def outline(target: str, max_depth: int = typer.Option(3, help="deepest heading 
                 typer.echo("  " * (c.level - 1) + f"{c.title}  · p.{c.page_start}")
 
 
+def _target_file_id(target: str | None) -> int | None:
+    """Resolve an optional --file (path or content_hash prefix) to a file id, scoping a query to
+    one document. None means search the whole corpus."""
+    if not target:
+        return None
+    path = Path(target)
+    with session_scope() as session:
+        if path.is_file():
+            return repo.get_file_id(session, hash_file(path))
+        return session.scalar(select(File.id).where(File.content_hash.like(f"{target}%")))
+
+
+@app.command()
+def search(
+    query: str,
+    file: str = typer.Option(None, help="restrict to one document (path or content_hash)"),
+    k: int = typer.Option(8, help="number of chunks to return"),
+) -> None:
+    """Show the top-k retrieved chunks for a query (no LLM) — useful to inspect retrieval."""
+    from doctalk.query.retriever import retrieve
+
+    hits = retrieve(query, k=k, file_id=_target_file_id(file))
+    if not hits:
+        typer.echo("(no hits — is anything ingested + embedded? try `doctalk rebuild-index`)")
+        return
+    for i, h in enumerate(hits, start=1):
+        chapter = h.chapter or "n/a"
+        typer.echo(f"[{i}] {h.score:.3f}  p.{h.page} · {chapter}")
+        typer.echo(f"      {h.text[:160].strip().replace(chr(10), ' ')}…")
+
+
+@app.command()
+def ask(
+    question: str,
+    file: str = typer.Option(None, help="restrict to one document (path or content_hash)"),
+    k: int = typer.Option(8, help="number of chunks to retrieve as context"),
+) -> None:
+    """Ask a question; answer is grounded in retrieved chunks and cites (file, chapter, page)."""
+    from doctalk.query.chat import answer
+
+    result = answer(question, k=k, file_id=_target_file_id(file))
+    typer.echo(result["answer"])
+    if result["citations"]:
+        typer.echo("\nSources:")
+        for c in result["citations"]:
+            typer.echo(f"  [{c['n']}] {c['file']} · {c['chapter'] or 'n/a'} · p.{c['page']}")
+
+
+@app.command()
+def rebuild_index() -> None:
+    """Regenerate the LanceDB text index from MySQL (the truth store). LanceDB is derived."""
+    from doctalk.models.embed import embed_passages
+    from doctalk.vector import store
+    from doctalk.vector.store import NO_CHAPTER
+
+    store.drop_text_table()
+    total = 0
+    with session_scope() as session:
+        for file_id in repo.get_all_file_ids(session):
+            chunks = repo.get_chunks(session, file_id)
+            if not chunks:
+                continue
+            vectors = embed_passages([c.text for c in chunks])
+            store.add_text_chunks(
+                [
+                    {
+                        "chunk_id": c.id,
+                        "file_id": file_id,
+                        "chapter_id": c.chapter_id if c.chapter_id is not None else NO_CHAPTER,
+                        "page": c.page,
+                        "vector": vec,
+                    }
+                    for c, vec in zip(chunks, vectors)
+                ]
+            )
+            total += len(chunks)
+    typer.echo(f"rebuilt text index: {total} chunks")
+
+
 def main() -> None:
     app()
 
