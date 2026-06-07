@@ -21,6 +21,7 @@ from doctalk.ingest.stages import (
     pdf_assets,
     pdf_structure,
     synth_entities,
+    synth_integrate,
     vlm_describe,
 )
 
@@ -50,6 +51,20 @@ def _synth_entities_stage(dep: str) -> Stage:
         model_version=s.synth_model or s.chat_model,
         params={"max_chunks": s.synth_max_chunks, "chunk_chars": s.synth_chunk_chars},
         deps=(dep,),
+    )
+
+
+def _synth_integrate_stage() -> Stage:
+    """Phase-4 page materialization: write the affected entity pages + index/log, commit to git.
+    Depends on the extraction stage; keyed by the synth model + the summaries toggle so a model
+    upgrade or toggling LLM prose re-integrates."""
+    s = get_settings()
+    return Stage(
+        "synth_integrate",
+        synth_integrate.run,
+        model_version=s.synth_model or s.chat_model,
+        params={"summaries": s.synth_summaries},
+        deps=("synth_entities",),
     )
 
 IMAGE_FORMATS = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
@@ -94,6 +109,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
             ),
             _link_semantic_stage("embed_text"),
             _synth_entities_stage("embed_text"),
+            _synth_integrate_stage(),
         ]
     elif file_format == "docx":
         stages += [
@@ -112,6 +128,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
             ),
             _link_semantic_stage("embed_text"),
             _synth_entities_stage("embed_text"),
+            _synth_integrate_stage(),
         ]
     elif file_format in IMAGE_FORMATS:
         stages += [

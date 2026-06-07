@@ -15,6 +15,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setenv("DOCTALK_DB_URL", f"sqlite:///{tmp_path / 'truth.db'}")
     monkeypatch.setenv("DOCTALK_LANCE_DIR", str(tmp_path / "lance"))  # isolate the derived index
     monkeypatch.setenv("DOCTALK_FIGURES_DIR", str(tmp_path / "figures"))  # isolate extracted rasters
+    monkeypatch.setenv("DOCTALK_WIKI_DIR", str(tmp_path / "wiki"))  # isolate the synthesis wiki repo
 
     from doctalk.config import get_settings
     from doctalk.db import session as session_mod

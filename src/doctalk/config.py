@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     synth_model: str | None = None
     synth_max_chunks: int = 40       # representative chunks sampled per source for extraction
     synth_chunk_chars: int = 1200    # per-chunk char cap inside the extraction window
+    # synth_integrate writes an LLM-authored lead paragraph for multi-claim entity pages (the
+    # signature "authored prose"). Best-effort + bounded to entities with >=2 claims to cap LLM
+    # calls; the page is valid (claims + provenance + links) even when this is off or the LLM fails.
+    synth_summaries: bool = True
 
     # --- Image clustering / dedup (near-duplicate grouping over CLIP) -------
     # Images whose pairwise CLIP-vision cosine >= this threshold land in one cluster; the

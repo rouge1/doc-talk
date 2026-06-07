@@ -26,6 +26,7 @@ from doctalk.db.models import (
     Link,
     Mention,
     Relation,
+    WikiPage,
     utcnow,
 )
 
@@ -434,3 +435,81 @@ def get_claims_for_entity(session: Session, entity_id: int) -> list[Claim]:
 
 def get_mentions_for_file(session: Session, file_id: int) -> list[Mention]:
     return list(session.scalars(select(Mention).where(Mention.file_id == file_id)))
+
+
+def get_entity_ids_for_file(session: Session, file_id: int) -> list[int]:
+    """Distinct entities a source touched (the pages ``synth_integrate`` must rewrite)."""
+    return list(
+        dict.fromkeys(session.scalars(select(Mention.entity_id).where(Mention.file_id == file_id)))
+    )
+
+
+def get_claim_sources(session: Session, claim_id: int) -> list[ClaimSource]:
+    return list(session.scalars(select(ClaimSource).where(ClaimSource.claim_id == claim_id)))
+
+
+def get_comention_entity_ids(session: Session, entity_id: int, limit: int = 12) -> list[int]:
+    """Entities that co-occur with this one — same chunk first (tight), else same file (loose).
+    Drives the ``[[wikilinks]]`` between pages so the wiki stays interlinked, not a bag of orphans."""
+    chunk_ids = [
+        c
+        for c in session.scalars(
+            select(Mention.chunk_id).where(
+                Mention.entity_id == entity_id, Mention.chunk_id.is_not(None)
+            )
+        )
+    ]
+    ids: list[int] = []
+    if chunk_ids:
+        ids = list(
+            dict.fromkeys(
+                session.scalars(
+                    select(Mention.entity_id).where(
+                        Mention.chunk_id.in_(chunk_ids), Mention.entity_id != entity_id
+                    )
+                )
+            )
+        )
+    if not ids:  # fall back to file-level co-mention
+        file_ids = list(
+            session.scalars(select(Mention.file_id).where(Mention.entity_id == entity_id))
+        )
+        if file_ids:
+            ids = list(
+                dict.fromkeys(
+                    session.scalars(
+                        select(Mention.entity_id).where(
+                            Mention.file_id.in_(file_ids), Mention.entity_id != entity_id
+                        )
+                    )
+                )
+            )
+    return ids[:limit]
+
+
+def set_entity_wiki_path(session: Session, entity_id: int, path: str) -> None:
+    entity = session.get(Entity, entity_id)
+    if entity is not None:
+        entity.wiki_path = path
+
+
+def upsert_wiki_page(session: Session, *, path: str, **fields: Any) -> WikiPage:
+    """Create-or-update the catalog row for a page (the body lives on disk; this is the index)."""
+    page = session.scalar(select(WikiPage).where(WikiPage.path == path))
+    if page is None:
+        page = WikiPage(path=path)
+        session.add(page)
+    for key, value in fields.items():
+        setattr(page, key, value)
+    session.flush()  # make it visible to the index-regeneration query in the same transaction
+    return page
+
+
+def get_wiki_page_by_path(session: Session, path: str) -> WikiPage | None:
+    return session.scalar(select(WikiPage).where(WikiPage.path == path))
+
+
+def get_wiki_pages_by_kind(session: Session, kind: str) -> list[WikiPage]:
+    return list(
+        session.scalars(select(WikiPage).where(WikiPage.kind == kind).order_by(WikiPage.title))
+    )

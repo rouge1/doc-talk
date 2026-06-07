@@ -30,6 +30,7 @@ from doctalk.db.models import (
     Link,
     Mention,
     Relation,
+    WikiPage,
 )
 from doctalk.db.session import get_engine, session_scope
 from doctalk.hashing import hash_file
@@ -99,6 +100,7 @@ def stats() -> None:
             (Entity, "entities"),
             (Claim, "claims"),
             (Mention, "mentions"),
+            (WikiPage, "wikipages"),
         ):
             n = session.scalar(select(func.count()).select_from(table))
             typer.echo(f"{label:<9} {n}")
