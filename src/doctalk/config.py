@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     rerank_model: str = "BAAI/bge-reranker-base"
     rerank_candidates: int = 30  # ANN hits fetched, then re-scored down to top_k
 
+    # --- Synthesis layer (Phase 4 — the compounding wiki) ------------------
+    # The synthesis LLM shares the chat model's GPU lease (no new resident model, so the 8 GB wall
+    # is unchanged). None reuses ``chat_model``; set DOCTALK_SYNTH_MODEL to a stronger extractor
+    # (e.g. "llama3.1:8b"). Extraction is fed a bounded, evenly-spaced sample of the source's chunks
+    # so a huge spec stays one tractable LLM call (full map-reduce over every chunk is a later
+    # refinement). The wiki git repo lives at ``wiki_dir``.
+    synth_model: str | None = None
+    synth_max_chunks: int = 40       # representative chunks sampled per source for extraction
+    synth_chunk_chars: int = 1200    # per-chunk char cap inside the extraction window
+
     # --- Image clustering / dedup (near-duplicate grouping over CLIP) -------
     # Images whose pairwise CLIP-vision cosine >= this threshold land in one cluster; the
     # cluster_id is the smallest file_id in the connected component (stable + order-independent,

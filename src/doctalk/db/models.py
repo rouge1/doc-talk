@@ -217,6 +217,110 @@ class Figure(Base):
     __table_args__ = (Index("ix_figures_file_page", "file_id", "page"),)
 
 
+# --- Phase 4: synthesis layer (the compounding wiki) -----------------------
+# These break the "everything but MySQL is derived" rule on the disk side: the wiki *prose* lives
+# in the ``wiki/`` git repo, not here. These rows are the index/catalog + the provenance graph that
+# keeps that prose auditable against the truth store (every claim -> chunk via claim_sources).
+
+
+class Entity(Base):
+    """A canonical thing the wiki has a page (or will have a page) about — a concept, component,
+    protocol, person, org… ``norm_key`` is the normalized blocking key the resolver matches on;
+    ``aliases`` keeps the surface variants. ``wiki_path``/``embedding_id`` are filled by later
+    synthesis sub-stages (integrate / resolve). ``source_count`` = distinct files that mention it."""
+
+    __tablename__ = "entities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(512))           # canonical surface form
+    type: Mapped[str] = mapped_column(String(32))            # concept|component|protocol|person|org|…
+    norm_key: Mapped[str] = mapped_column(String(512))       # normalized blocking key (resolver)
+    aliases: Mapped[list] = mapped_column(JSON, default=list)
+    wiki_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # resolution vec table
+    source_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_entities_name_type", "name", "type", unique=True),
+        Index("ix_entities_normkey_type", "norm_key", "type"),
+    )
+
+
+class WikiPage(Base):
+    """Catalog row for one authored markdown page. The body is on disk in the git repo (``path``);
+    this is the index synthesis + lint query. ``kind`` is entity|concept|topic|overview|query;
+    ``md_hash`` lets a re-synth detect an unchanged page."""
+
+    __tablename__ = "wiki_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    path: Mapped[str] = mapped_column(String(1024), unique=True)   # relative to wiki_dir
+    title: Mapped[str] = mapped_column(String(512))
+    kind: Mapped[str] = mapped_column(String(16))
+    entity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("entities.id", ondelete="SET NULL"), nullable=True
+    )
+    source_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_synth_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    md_hash: Mapped[str | None] = mapped_column(String(HASH_LEN), nullable=True)
+
+
+class Claim(Base):
+    """A single asserted fact about an entity, extracted from one source. ``file_id`` is the
+    asserting source (makes "clear this file's claims" a cheap delete + idempotent re-synth);
+    ``wiki_page_id`` is filled when ``synth_integrate`` places the claim on a page. ``status``
+    tracks contradiction/supersession so the wiki flags conflicts instead of overwriting them."""
+
+    __tablename__ = "claims"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), index=True
+    )
+    wiki_page_id: Mapped[int | None] = mapped_column(
+        ForeignKey("wiki_pages.id", ondelete="SET NULL"), nullable=True
+    )
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active|contradicted|superseded
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClaimSource(Base):
+    """Provenance: a claim down to the chunk(s) (and file) it came from. This is what makes the
+    wiki auditable against the truth store — ``wiki-audit`` checks every cited chunk still exists."""
+
+    __tablename__ = "claim_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    claim_id: Mapped[int] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chunks.id", ondelete="SET NULL"), nullable=True
+    )
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+
+
+class Mention(Base):
+    """A source touched an entity here. Lets a re-synth (or contradiction check) know exactly which
+    entity pages a given source affects, without re-running extraction."""
+
+    __tablename__ = "mentions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chunks.id", ondelete="SET NULL"), nullable=True
+    )
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), index=True
+    )
+
+
 class Image(Base):
     """Per-image derived metadata for a standalone photo (or, later, a figure extracted from a
     PDF). One row per image file, joined to ``files`` by ``file_id``. Format/byte_size live on the

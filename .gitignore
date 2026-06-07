@@ -30,6 +30,10 @@ data/figures/
 # local SQLite dev truth store (DOCTALK_DB_URL=sqlite:///dev.db)
 *.db
 
+# Synthesis wiki — a per-instance second source of truth with its OWN nested git repo
+# (one commit per ingested source). Runtime data, not repo code.
+wiki/
+
 # OS / editor cruft
 .DS_Store
 *.swp

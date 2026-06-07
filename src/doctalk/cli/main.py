@@ -20,12 +20,15 @@ from doctalk.db.models import (
     Base,
     Chapter,
     Chunk,
+    Claim,
+    Entity,
     Figure,
     File,
     Image,
     Job,
     JobStatus,
     Link,
+    Mention,
     Relation,
 )
 from doctalk.db.session import get_engine, session_scope
@@ -93,6 +96,9 @@ def stats() -> None:
             (Relation, "relations"),
             (Figure, "figures"),
             (Image, "images"),
+            (Entity, "entities"),
+            (Claim, "claims"),
+            (Mention, "mentions"),
         ):
             n = session.scalar(select(func.count()).select_from(table))
             typer.echo(f"{label:<9} {n}")
@@ -169,6 +175,32 @@ def figures(
                 typer.echo(f"      {r.image_path}")
             if r.ocr_text:
                 typer.echo(f"      ocr: {r.ocr_text[:100].replace(chr(10), ' ').strip()}…")
+
+
+@app.command()
+def entities(limit: int = typer.Option(40, help="max entities to list")) -> None:
+    """List synthesized entities (most-referenced first) with claim + source counts."""
+    with session_scope() as session:
+        rows = repo.get_entities(session, limit=limit)
+        if not rows:
+            typer.echo("(no entities — ingest a document so synth_entities can run, with Ollama up)")
+            return
+        for e in rows:
+            claims = len(repo.get_claims_for_entity(session, e.id))
+            aliases = f"  ({', '.join(e.aliases)})" if e.aliases else ""
+            typer.echo(
+                f"[{e.type}] {e.name}{aliases}  · {claims} claim(s) · {e.source_count} source(s)"
+            )
+
+
+@app.command()
+def wiki_init() -> None:
+    """Create the wiki/ git repo scaffold (dirs + index.md/log.md/overview.md). Idempotent."""
+    from doctalk.synth import wikirepo
+
+    root = wikirepo.ensure_scaffold()
+    versioned = (root / ".git").exists()
+    typer.echo(f"wiki scaffold ready at {root}" + ("" if versioned else "  (git unavailable — unversioned)"))
 
 
 def _target_file_id(target: str | None) -> int | None:

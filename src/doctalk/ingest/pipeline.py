@@ -20,6 +20,7 @@ from doctalk.ingest.stages import (
     ocr,
     pdf_assets,
     pdf_structure,
+    synth_entities,
     vlm_describe,
 )
 
@@ -34,6 +35,20 @@ def _link_semantic_stage(dep: str) -> Stage:
         link_semantic.run,
         model_version="bge-small-en-v1.5",
         params={"threshold": s.link_sim_threshold, "top_n": s.link_top_n},
+        deps=(dep,),
+    )
+
+
+def _synth_entities_stage(dep: str) -> Stage:
+    """Phase-4 entity/claim extraction. Keyed by the synth model (a model upgrade re-synthesizes)
+    with the sampling knobs in params so retuning re-runs it. LLM-bound; runs last, after the
+    document's chunks exist."""
+    s = get_settings()
+    return Stage(
+        "synth_entities",
+        synth_entities.run,
+        model_version=s.synth_model or s.chat_model,
+        params={"max_chunks": s.synth_max_chunks, "chunk_chars": s.synth_chunk_chars},
         deps=(dep,),
     )
 
@@ -78,6 +93,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 deps=("pdf_assets",),
             ),
             _link_semantic_stage("embed_text"),
+            _synth_entities_stage("embed_text"),
         ]
     elif file_format == "docx":
         stages += [
@@ -95,6 +111,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 deps=("docx_structure",),
             ),
             _link_semantic_stage("embed_text"),
+            _synth_entities_stage("embed_text"),
         ]
     elif file_format in IMAGE_FORMATS:
         stages += [

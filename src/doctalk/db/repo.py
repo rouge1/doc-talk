@@ -9,18 +9,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
 from doctalk.db.models import (
     Chapter,
     Chunk,
+    Claim,
+    ClaimSource,
+    Entity,
     Figure,
     File,
     Image,
     Job,
     JobStatus,
     Link,
+    Mention,
     Relation,
     utcnow,
 )
@@ -335,3 +339,98 @@ def relabel_cluster(session: Session, old_cluster_id: int, new_cluster_id: int) 
     session.execute(
         update(Image).where(Image.cluster_id == old_cluster_id).values(cluster_id=new_cluster_id)
     )
+
+
+# --- synthesis layer (Phase 4) ---------------------------------------------
+
+
+def find_entity_by_norm_key(session: Session, norm_key: str, type_: str) -> Entity | None:
+    """The blocking-key lookup the (placeholder) resolver uses: exact normalized name + type.
+    The full ``synth_resolve`` (fuzzy + embedding + two-threshold band) supersedes this later."""
+    return session.scalar(
+        select(Entity).where(Entity.norm_key == norm_key, Entity.type == type_)
+    )
+
+
+def get_or_create_entity(
+    session: Session, *, name: str, type_: str, norm_key: str, aliases: list[str] | None = None
+) -> Entity:
+    """Resolve an extracted entity to a canonical row, creating it if new. PLACEHOLDER resolver:
+    exact ``(norm_key, type)`` match only. Merges any new aliases into the existing row."""
+    entity = find_entity_by_norm_key(session, norm_key, type_)
+    if entity is None:
+        entity = Entity(name=name, type=type_, norm_key=norm_key, aliases=list(aliases or []))
+        session.add(entity)
+        session.flush()  # assign id for claims/mentions in the same stage transaction
+        return entity
+    if aliases:  # accumulate surface variants we hadn't seen
+        merged = list(dict.fromkeys([*(entity.aliases or []), *aliases]))
+        if merged != (entity.aliases or []):
+            entity.aliases = merged
+    return entity
+
+
+def insert_claim(
+    session: Session, *, entity_id: int, file_id: int, text: str, confidence: float = 1.0
+) -> Claim:
+    """Record one asserted fact about an entity, attributed to the asserting source file."""
+    claim = Claim(entity_id=entity_id, file_id=file_id, text=text, confidence=confidence)
+    session.add(claim)
+    session.flush()
+    return claim
+
+
+def insert_claim_sources(session: Session, claim_id: int, rows: list[dict[str, Any]]) -> None:
+    """Provenance rows for a claim: each needs ``file_id`` and an optional ``chunk_id``."""
+    if rows:
+        session.execute(insert(ClaimSource), [{"claim_id": claim_id, **r} for r in rows])
+
+
+def insert_mentions(session: Session, file_id: int, rows: list[dict[str, Any]]) -> None:
+    """``entity_id`` (+ optional ``chunk_id``) per row — which entities this source touched."""
+    if rows:
+        session.execute(insert(Mention), [{"file_id": file_id, **r} for r in rows])
+
+
+def recompute_entity_source_count(session: Session, entity_id: int) -> None:
+    """Set ``source_count`` to the number of distinct files mentioning the entity (kept correct
+    across re-synths, which delete+reinsert a file's mentions)."""
+    n = session.scalar(
+        select(func.count(func.distinct(Mention.file_id))).where(Mention.entity_id == entity_id)
+    )
+    entity = session.get(Entity, entity_id)
+    if entity is not None:
+        entity.source_count = n or 0
+
+
+def clear_synth_for_file(session: Session, file_id: int) -> list[int]:
+    """Idempotent re-synth: drop this file's mentions + claims (claim_sources cascade). Returns the
+    entity ids it touched so the caller can recompute their source counts. Entities themselves are
+    canonical/shared and are left in place (a later lint prunes any left orphaned)."""
+    touched = set(
+        session.scalars(select(Mention.entity_id).where(Mention.file_id == file_id))
+    )
+    touched |= set(session.scalars(select(Claim.entity_id).where(Claim.file_id == file_id)))
+    session.execute(delete(Mention).where(Mention.file_id == file_id))
+    session.execute(delete(Claim).where(Claim.file_id == file_id))  # claim_sources cascade
+    return sorted(touched)
+
+
+def get_entities(session: Session, limit: int | None = None) -> list[Entity]:
+    """All entities, most-referenced first (the catalog view)."""
+    query = select(Entity).order_by(Entity.source_count.desc(), Entity.name)
+    if limit is not None:
+        query = query.limit(limit)
+    return list(session.scalars(query))
+
+
+def get_claims_for_entity(session: Session, entity_id: int) -> list[Claim]:
+    return list(
+        session.scalars(
+            select(Claim).where(Claim.entity_id == entity_id).order_by(Claim.id)
+        )
+    )
+
+
+def get_mentions_for_file(session: Session, file_id: int) -> list[Mention]:
+    return list(session.scalars(select(Mention).where(Mention.file_id == file_id)))
