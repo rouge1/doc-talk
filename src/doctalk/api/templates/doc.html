@@ -16,4 +16,20 @@
   {% else %}
     <p class="muted">No outline for this document.</p>
   {% endif %}
+
+  {% if assets %}
+    <h2>Tables &amp; figures</h2>
+    {% for a in assets %}
+      <div class="card">
+        <div class="muted">{{ a.kind|upper }} · pos {{ a.page }}</div>
+        {% if a.kind == "table" and a.table_md %}
+          <pre class="chunk">{{ a.table_md }}</pre>
+        {% elif a.kind == "figure" %}
+          <img src="/figure/{{ a.id }}" alt="figure"
+               style="max-width:100%; border:1px solid var(--line); border-radius:8px;">
+        {% endif %}
+        {% if a.ocr %}<div class="muted">OCR: {{ a.ocr[:300] }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  {% endif %}
 {% endblock %}

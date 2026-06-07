@@ -53,8 +53,19 @@ def doc(request: Request, content_hash: str):
             {"id": c.id, "title": c.title, "level": c.level, "page": c.page_start}
             for c in repo.get_chapters(s, f.id)
         ]
+        # Flat docs (no outline) still surface their tables/figures here, since there are no
+        # chapter pages to host them. Structured docs show assets per-chapter instead.
+        assets = []
+        if not chapters:
+            assets = [
+                {"id": fig.id, "kind": fig.kind, "page": fig.page,
+                 "table_md": fig.table_md, "ocr": fig.ocr_text}
+                for fig in repo.get_figures(s, f.id)
+            ]
     return templates.TemplateResponse(
-        request, "doc.html", {"name": name, "hash": content_hash, "chapters": chapters}
+        request,
+        "doc.html",
+        {"name": name, "hash": content_hash, "chapters": chapters, "assets": assets},
     )
 
 

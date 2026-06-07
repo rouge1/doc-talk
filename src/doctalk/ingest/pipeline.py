@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from doctalk.ingest.dag import Stage
 from doctalk.ingest.stages import (
+    docx_structure,
     embed_image,
     embed_text,
     exif_geo,
@@ -58,6 +59,22 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 ocr.run_figures,
                 model_version="tesseract-1",
                 deps=("pdf_assets",),
+            ),
+        ]
+    elif file_format == "docx":
+        stages += [
+            Stage(
+                "docx_structure",
+                docx_structure.run,
+                model_version="python-docx-1",
+                deps=("identify",),
+            ),
+            # Reuses the format-agnostic text embedder (reads chunks from the truth store).
+            Stage(
+                "embed_text",
+                embed_text.run,
+                model_version="bge-small-en-v1.5",
+                deps=("docx_structure",),
             ),
         ]
     elif file_format in IMAGE_FORMATS:
