@@ -102,11 +102,42 @@ def chapter(request: Request, content_hash: str, chapter_id: int):
                 .order_by(Figure.ord)
             )
         ]
+        related_sections, related_images = _related(s, chapter_id)
     return templates.TemplateResponse(
         request,
         "chapter.html",
-        {"hash": content_hash, "title": title, "page": page, "chunks": chunks, "assets": assets},
+        {
+            "hash": content_hash, "title": title, "page": page, "chunks": chunks, "assets": assets,
+            "related_sections": related_sections, "related_images": related_images,
+        },
     )
+
+
+def _related(s, chapter_id: int):
+    """Resolve this chapter's semantic relations into related document sections (best score per
+    target chapter) and related images, both sorted by score."""
+    sections: dict[int, dict] = {}
+    images: dict[int, dict] = {}
+    for r in repo.get_relations_for_chapter(s, chapter_id):
+        if r.src_image_id is not None and r.dst_chapter_id == chapter_id:
+            f = s.get(File, r.src_image_id)
+            if f is not None and (r.src_image_id not in images or r.score > images[r.src_image_id]["score"]):
+                images[r.src_image_id] = {"file_id": r.src_image_id, "name": f.filename, "score": r.score}
+            continue
+        other = r.src_chapter_id if r.dst_chapter_id == chapter_id else r.dst_chapter_id
+        if other is None or other == chapter_id:
+            continue
+        oc = s.get(Chapter, other)
+        of = s.get(File, oc.file_id) if oc else None
+        if oc is None or of is None:
+            continue
+        if other not in sections or r.score > sections[other]["score"]:
+            sections[other] = {
+                "hash": of.content_hash, "chapter_id": other, "title": oc.title,
+                "file": of.filename, "score": r.score,
+            }
+    by_score = lambda d: sorted(d.values(), key=lambda x: x["score"], reverse=True)  # noqa: E731
+    return by_score(sections), by_score(images)
 
 
 @app.get("/search", response_class=HTMLResponse)

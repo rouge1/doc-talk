@@ -12,7 +12,18 @@ from typing import Any
 from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
-from doctalk.db.models import Chapter, Chunk, Figure, File, Image, Job, JobStatus, Link, utcnow
+from doctalk.db.models import (
+    Chapter,
+    Chunk,
+    Figure,
+    File,
+    Image,
+    Job,
+    JobStatus,
+    Link,
+    Relation,
+    utcnow,
+)
 
 
 # --- files -----------------------------------------------------------------
@@ -192,6 +203,35 @@ def get_chunks(session: Session, file_id: int) -> list[Chunk]:
 
 def get_all_file_ids(session: Session) -> list[int]:
     return list(session.scalars(select(File.id).order_by(File.id)))
+
+
+# --- semantic relations (cross-corpus links) -------------------------------
+
+
+def clear_relations_for_file(session: Session, file_id: int) -> None:
+    """Remove the relations this file authored (src side); a re-run rebuilds them."""
+    session.execute(delete(Relation).where(Relation.src_file_id == file_id))
+
+
+def insert_relations(session: Session, rows: list[dict[str, Any]]) -> None:
+    if rows:
+        session.execute(insert(Relation), rows)
+
+
+def get_relations_for_chapter(session: Session, chapter_id: int) -> list[Relation]:
+    """Both directions touching this chapter (it as source, or as a target of others)."""
+    return list(
+        session.scalars(
+            select(Relation).where(
+                (Relation.src_chapter_id == chapter_id)
+                | (Relation.dst_chapter_id == chapter_id)
+            )
+        )
+    )
+
+
+def get_relations_for_file(session: Session, file_id: int) -> list[Relation]:
+    return list(session.scalars(select(Relation).where(Relation.src_file_id == file_id)))
 
 
 # --- figures / tables ------------------------------------------------------

@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     ollama_host: str = "http://127.0.0.1:11434"
     retrieval_top_k: int = 8
 
+    # --- Semantic cross-linking (relations across the corpus) --------------
+    # A chapter/image links to the most similar OTHER document sections (bge cosine). Thresholded
+    # so unrelated content stays unlinked ("don't force it"); capped per source to limit noise.
+    # 0.70 keeps strongly-related sections (same-topic ~0.72-0.85) while letting unrelated content
+    # stay unlinked — on a disparate corpus this correctly yields no spurious cross-modal links.
+    link_sim_threshold: float = 0.70
+    link_top_n: int = 5            # max relations emitted per source chapter/image
+    link_fetch_k: int = 40         # ANN candidate chunks fetched, then aggregated to chapters
+
     # --- Reranking (cross-encoder over the ANN candidate pool) -------------
     # bge-reranker via fastembed's TextCrossEncoder (ONNX, no torch). PLAN's v2-m3 isn't
     # ONNX-packaged in fastembed, so we use the bge-reranker-base variant. Disable to fall back

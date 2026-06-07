@@ -14,11 +14,28 @@ from doctalk.ingest.stages import (
     identify,
     image_extract,
     link_internal,
+    link_semantic,
     ocr,
     pdf_assets,
     pdf_structure,
     vlm_describe,
 )
+
+
+def _link_semantic_stage(dep: str) -> Stage:
+    """Cross-corpus semantic links. Depends on the file's text index / description being ready;
+    searches the whole corpus, so each file links against whatever is already ingested. The
+    threshold/top_n go in params, so retuning them re-runs the stage (the ledger key changes)."""
+    from doctalk.config import get_settings
+
+    s = get_settings()
+    return Stage(
+        "link_semantic",
+        link_semantic.run,
+        model_version="bge-small-en-v1.5",
+        params={"threshold": s.link_sim_threshold, "top_n": s.link_top_n},
+        deps=(dep,),
+    )
 
 IMAGE_FORMATS = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
 
@@ -60,6 +77,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 model_version="tesseract-1",
                 deps=("pdf_assets",),
             ),
+            _link_semantic_stage("embed_text"),
         ]
     elif file_format == "docx":
         stages += [
@@ -76,6 +94,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 model_version="bge-small-en-v1.5",
                 deps=("docx_structure",),
             ),
+            _link_semantic_stage("embed_text"),
         ]
     elif file_format in IMAGE_FORMATS:
         stages += [
@@ -96,5 +115,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 model_version="llama3.2-vision",
                 deps=("image_extract",),
             ),
+            # Attach the image to related document sections via its description (bge bridge).
+            _link_semantic_stage("vlm_describe"),
         ]
     return stages

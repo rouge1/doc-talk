@@ -165,6 +165,33 @@ class Link(Base):
     __table_args__ = (Index("ix_links_file_kind", "file_id", "kind"),)
 
 
+class Relation(Base):
+    """A semantic edge across the corpus: a source (a chapter, or an image via its VLM
+    description) relates to a target document section (chapter), scored by embedding similarity.
+    Unlike ``Link`` (PDF-internal, page→page), relations connect *different* documents and attach
+    images to relevant sections — the Phase-2 cross-linking layer. Directed src→dst; the UI reads
+    both directions. ``src_file_id`` makes "clear this file's relations" a cheap delete."""
+
+    __tablename__ = "relations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), default="semantic")
+    src_chapter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chapters.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    src_image_id: Mapped[int | None] = mapped_column(  # an image's file_id (no chapters)
+        ForeignKey("files.id", ondelete="CASCADE"), nullable=True
+    )
+    dst_chapter_id: Mapped[int] = mapped_column(
+        ForeignKey("chapters.id", ondelete="CASCADE"), index=True
+    )
+    src_file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    dst_file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    score: Mapped[float] = mapped_column(Float)
+
+    __table_args__ = (Index("ix_relations_src_file", "src_file_id"),)
+
+
 class Figure(Base):
     """A figure or table extracted from a document page. Tables carry ``table_md`` (PyMuPDF
     markdown); figures carry an ``image_path`` to the raster on disk (under ``figures_dir``).

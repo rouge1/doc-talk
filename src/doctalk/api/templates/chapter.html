@@ -6,6 +6,33 @@
   <p class="muted">starts on p.{{ page }} · {{ chunks|length }} chunk(s)
     {% if assets %}· {{ assets|length }} table(s)/figure(s){% endif %}</p>
 
+  {% if related_sections or related_images %}
+    <h2>Related</h2>
+    {% if related_sections %}
+      <p class="muted">Related sections (by meaning)</p>
+      <ul class="tree">
+        {% for r in related_sections %}
+          <li>
+            <span class="score">{{ "%.2f"|format(r.score) }}</span>
+            <a href="/doc/{{ r.hash }}/chapter/{{ r.chapter_id }}">{{ r.title }}</a>
+            <span class="muted">· {{ r.file }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if related_images %}
+      <p class="muted">Related images</p>
+      <div class="grid">
+        {% for im in related_images %}
+          <figure>
+            <img src="/image/{{ im.file_id }}" alt="{{ im.name }}" loading="lazy">
+            <figcaption><span class="score">{{ "%.2f"|format(im.score) }}</span> {{ im.name }}</figcaption>
+          </figure>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+
   {% if assets %}
     <h2>Tables &amp; figures</h2>
     {% for a in assets %}

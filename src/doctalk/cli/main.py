@@ -16,7 +16,18 @@ import typer
 from sqlalchemy import func, select
 
 from doctalk.db import repo
-from doctalk.db.models import Base, Chapter, Chunk, Figure, File, Image, Job, JobStatus, Link
+from doctalk.db.models import (
+    Base,
+    Chapter,
+    Chunk,
+    Figure,
+    File,
+    Image,
+    Job,
+    JobStatus,
+    Link,
+    Relation,
+)
 from doctalk.db.session import get_engine, session_scope
 from doctalk.hashing import hash_file
 from doctalk.ingest.dag import run_dag
@@ -79,6 +90,7 @@ def stats() -> None:
             (Chapter, "chapters"),
             (Chunk, "chunks"),
             (Link, "links"),
+            (Relation, "relations"),
             (Figure, "figures"),
             (Image, "images"),
         ):
