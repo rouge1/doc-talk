@@ -189,8 +189,16 @@ def gallery(request: Request, q: str = "", fmt: str = "", min_kb: str = ""):
         format=fmt or None, min_bytes=int(min_kb_val * 1024) if min_kb_val else None
     )
     hits = find_images(q, filt, k=24) if q.strip() else list_images(filt, limit=48)
-    items = [
-        {
+    # Collapse near-duplicates: one card per cluster, keeping the first hit (best-scoring for a
+    # search, the representative for a listing) and counting the rest as "+N similar".
+    items: list[dict] = []
+    by_cluster: dict[object, dict] = {}
+    for h in hits:
+        key = h.cluster_id if h.cluster_id is not None else f"f{h.file_id}"
+        if key in by_cluster:
+            by_cluster[key]["dups"] += 1
+            continue
+        item = {
             "file_id": h.file_id,
             "name": h.filename,
             "desc": h.description,
@@ -199,9 +207,10 @@ def gallery(request: Request, q: str = "", fmt: str = "", min_kb: str = ""):
             "score": h.score,
             "when": h.exif_datetime.date().isoformat() if h.exif_datetime else None,
             "geo": h.geo_country,
+            "dups": 0,
         }
-        for h in hits
-    ]
+        by_cluster[key] = item
+        items.append(item)
     return templates.TemplateResponse(
         request, "gallery.html", {"q": q, "fmt": fmt, "min_kb": min_kb, "items": items}
     )

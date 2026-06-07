@@ -41,3 +41,4 @@ def run(ctx: StageContext) -> None:
         ]
     )
     ctx.scratch["embedded_image"] = True
+    ctx.scratch["image_vector"] = vector  # handed to cluster_image (avoids a re-read)

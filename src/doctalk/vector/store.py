@@ -128,6 +128,20 @@ def drop_image_table() -> None:
         db.drop_table(IMAGE_TABLE)
 
 
+def all_image_vectors() -> dict[int, list[float]]:
+    """Every image's stored CLIP vector, keyed by file_id — the input to a global recluster."""
+    db = _db()
+    if IMAGE_TABLE not in db.table_names():
+        return {}
+    return {r["file_id"]: r["vector"] for r in db.open_table(IMAGE_TABLE).to_arrow().to_pylist()}
+
+
+def get_image_vector(file_id: int) -> list[float] | None:
+    """One image's stored CLIP vector (used by the per-file cluster stage when it isn't already
+    in scratch). Reads the small image table directly rather than an ANN query with no target."""
+    return all_image_vectors().get(file_id)
+
+
 def search_images(query_vector: list[float], k: int, where: str | None = None) -> list[dict]:
     """CLIP text->image ANN search with an optional metadata prefilter (a Lance SQL predicate)."""
     db = _db()

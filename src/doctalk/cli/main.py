@@ -96,6 +96,16 @@ def stats() -> None:
         ):
             n = session.scalar(select(func.count()).select_from(table))
             typer.echo(f"{label:<9} {n}")
+        # Image dedup summary: distinct clusters + redundant (non-representative) images.
+        clustered = session.scalar(
+            select(func.count()).select_from(Image).where(Image.cluster_id.is_not(None))
+        )
+        n_clusters = session.scalar(
+            select(func.count(func.distinct(Image.cluster_id))).where(Image.cluster_id.is_not(None))
+        )
+        if clustered:
+            typer.echo(f"clusters  {n_clusters} ({clustered - n_clusters} redundant)")
+
         rows = session.execute(select(Job.status, func.count()).group_by(Job.status)).all()
         if not rows:
             typer.echo("jobs:     (none)")
@@ -240,6 +250,35 @@ def rebuild_index() -> None:
             )
             total += len(chunks)
     typer.echo(f"rebuilt text index: {total} chunks")
+
+
+@app.command()
+def recluster() -> None:
+    """Recompute image near-duplicate clusters globally from the CLIP vectors (authoritative;
+    order-independent — like ``rebuild-index`` for the dedup labels). cluster_id = the smallest
+    file_id in each connected component."""
+    from doctalk.cluster.grouping import cluster_components
+    from doctalk.config import get_settings
+    from doctalk.vector import store
+
+    vectors = store.all_image_vectors()
+    if not vectors:
+        typer.echo("(no embedded images — ingest some, or run `doctalk rebuild-index`)")
+        return
+    labels = cluster_components(vectors, get_settings().cluster_sim_threshold)
+    with session_scope() as session:
+        for file_id, cluster_id in labels.items():
+            repo.set_image_cluster(session, file_id, cluster_id)
+
+    sizes: dict[int, int] = {}
+    for cluster_id in labels.values():
+        sizes[cluster_id] = sizes.get(cluster_id, 0) + 1
+    dup_groups = sum(1 for n in sizes.values() if n > 1)
+    extras = sum(n - 1 for n in sizes.values() if n > 1)
+    typer.echo(
+        f"reclustered {len(labels)} images into {len(sizes)} clusters "
+        f"({dup_groups} with near-duplicates, {extras} redundant)"
+    )
 
 
 @app.command()

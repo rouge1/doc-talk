@@ -5,8 +5,10 @@ run ``identify`` only (their extractors land in Phase 1's image half and Phase 2
 
 from __future__ import annotations
 
+from doctalk.config import get_settings
 from doctalk.ingest.dag import Stage
 from doctalk.ingest.stages import (
+    cluster_image,
     docx_structure,
     embed_image,
     embed_text,
@@ -26,8 +28,6 @@ def _link_semantic_stage(dep: str) -> Stage:
     """Cross-corpus semantic links. Depends on the file's text index / description being ready;
     searches the whole corpus, so each file links against whatever is already ingested. The
     threshold/top_n go in params, so retuning them re-runs the stage (the ledger key changes)."""
-    from doctalk.config import get_settings
-
     s = get_settings()
     return Stage(
         "link_semantic",
@@ -108,6 +108,15 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 embed_image.run,
                 model_version="clip-vit-b-32",
                 deps=("exif_geo",),
+            ),
+            # Near-duplicate grouping against the whole image index. Threshold in params so
+            # retuning re-runs the stage (the ledger key changes), like link_semantic.
+            Stage(
+                "cluster_image",
+                cluster_image.run,
+                model_version="clip-vit-b-32",
+                params={"threshold": get_settings().cluster_sim_threshold},
+                deps=("embed_image",),
             ),
             Stage(
                 "vlm_describe",

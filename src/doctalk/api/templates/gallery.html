@@ -16,6 +16,7 @@
           <figcaption>
             {% if it.score is not none %}<span class="score">{{ "%.3f"|format(it.score) }}</span> {% endif %}
             <strong>{{ it.name }}</strong>
+            {% if it.dups %}<span class="muted">+{{ it.dups }} similar</span>{% endif %}
             <div class="muted">{{ it.fmt }} · {{ it.kb }}KB{% if it.when %} · {{ it.when }}{% endif %}{% if it.geo %} · {{ it.geo }}{% endif %}</div>
             {% if it.desc %}<div>{{ it.desc[:120] }}</div>{% endif %}
           </figcaption>

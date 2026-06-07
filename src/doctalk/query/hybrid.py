@@ -39,6 +39,7 @@ class ImageHit:
     geo_country: str | None
     exif_datetime: datetime | None
     description: str | None
+    cluster_id: int | None = None  # near-duplicate group (component-min file_id); None = unclustered
 
 
 def month_range(year: int, month: int | None = None) -> tuple[int, int]:
@@ -88,6 +89,7 @@ def _to_hit(session, file_id: int, score: float | None) -> ImageHit | None:
         geo_country=image.geo_country if image else None,
         exif_datetime=image.exif_datetime if image else None,
         description=image.vlm_description if image else None,
+        cluster_id=image.cluster_id if image else None,
     )
 
 
@@ -135,6 +137,7 @@ def list_images(filt: ImageFilter, limit: int = 50) -> list[ImageHit]:
                     geo_country=image.geo_country,
                     exif_datetime=image.exif_datetime,
                     description=image.vlm_description,
+                    cluster_id=image.cluster_id,
                 )
             )
         return hits

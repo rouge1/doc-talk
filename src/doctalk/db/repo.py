@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.orm import Session
 
 from doctalk.db.models import (
@@ -308,3 +308,30 @@ def get_image(session: Session, file_id: int) -> Image | None:
 
 def get_all_image_file_ids(session: Session) -> list[int]:
     return list(session.scalars(select(Image.file_id).order_by(Image.file_id)))
+
+
+def get_image_clusters(session: Session, file_ids: list[int]) -> dict[int, int | None]:
+    """Current cluster_id for each requested image (file_id -> cluster_id|None). Missing images
+    are absent from the result."""
+    rows = session.execute(
+        select(Image.file_id, Image.cluster_id).where(Image.file_id.in_(file_ids))
+    ).all()
+    return {fid: cid for fid, cid in rows}
+
+
+def set_image_cluster(session: Session, file_id: int, cluster_id: int) -> None:
+    """Assign an image to a near-duplicate cluster (cluster_id = the component's min file_id)."""
+    image = session.scalar(select(Image).where(Image.file_id == file_id))
+    if image is None:
+        raise ValueError(f"set_image_cluster: no image row for file_id={file_id}")
+    image.cluster_id = cluster_id
+
+
+def relabel_cluster(session: Session, old_cluster_id: int, new_cluster_id: int) -> None:
+    """Repoint every image in ``old_cluster_id`` to ``new_cluster_id`` — the single-link merge
+    that fires when a freshly-added image bridges two previously-separate clusters."""
+    if old_cluster_id == new_cluster_id:
+        return
+    session.execute(
+        update(Image).where(Image.cluster_id == old_cluster_id).values(cluster_id=new_cluster_id)
+    )

@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     rerank_model: str = "BAAI/bge-reranker-base"
     rerank_candidates: int = 30  # ANN hits fetched, then re-scored down to top_k
 
+    # --- Image clustering / dedup (near-duplicate grouping over CLIP) -------
+    # Images whose pairwise CLIP-vision cosine >= this threshold land in one cluster; the
+    # cluster_id is the smallest file_id in the connected component (stable + order-independent,
+    # so a re-run yields identical labels). 0.92 groups near-identical photos (re-saves, resizes,
+    # recompressions) without merging merely-similar-but-distinct images. O(n^2) at recluster time
+    # — fine for gallery-scale photo sets.
+    cluster_sim_threshold: float = 0.92
+    cluster_fetch_k: int = 20      # ANN neighbours pulled per image before the threshold cut
+
     # --- Asset extraction (figures / tables / OCR) -------------------------
     # Embedded rasters smaller than this on either side are icons/rules, not figures — skipped.
     figure_min_px: int = 64
