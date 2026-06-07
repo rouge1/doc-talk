@@ -12,7 +12,17 @@
     {% if result.citations %}
       <h2>Sources</h2>
       {% for c in result.citations %}
-        <div class="muted">[{{ c.n }}] {{ c.file }} · {{ c.chapter or "n/a" }} · p.{{ c.page }}</div>
+        <div class="muted">
+          [{{ c.n }}]
+          {%- set label = c.file ~ " · " ~ (c.chapter or "n/a") ~ " · p." ~ c.page %}
+          {% if c.content_hash and c.chapter_id %}
+            <a href="/doc/{{ c.content_hash }}/chapter/{{ c.chapter_id }}">{{ label }}</a>
+          {% elif c.content_hash %}
+            <a href="/doc/{{ c.content_hash }}">{{ label }}</a>
+          {% else %}
+            {{ label }}
+          {% endif %}
+        </div>
       {% endfor %}
     {% endif %}
   {% endif %}

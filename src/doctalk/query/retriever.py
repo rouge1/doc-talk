@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from doctalk.db import repo
 from doctalk.db.models import Chapter, Chunk, File
 from doctalk.db.session import session_scope
 
@@ -19,6 +18,8 @@ class Hit:
     page: int
     text: str
     score: float  # cosine similarity (1 - distance); higher is closer
+    content_hash: str | None = None  # for building a citation link to the source doc/chapter
+    chapter_id: int | None = None
 
 
 def retrieve(question: str, k: int = 8, file_id: int | None = None) -> list[Hit]:
@@ -44,6 +45,8 @@ def retrieve(question: str, k: int = 8, file_id: int | None = None) -> list[Hit]
                     page=chunk.page,
                     text=chunk.text,
                     score=round(1.0 - float(row.get("_distance", 0.0)), 4),
+                    content_hash=file.content_hash if file else None,
+                    chapter_id=chunk.chapter_id,
                 )
             )
     return hits

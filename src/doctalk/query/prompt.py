@@ -35,7 +35,16 @@ def build_messages(question: str, hits: list[Any]) -> list[dict[str, str]]:
 
 
 def format_citations(hits: list[Any]) -> list[dict[str, Any]]:
+    # content_hash/chapter_id are optional (getattr) so this stays duck-typed: it works on any
+    # object with file/chapter/page, and adds link targets when the hit carries them.
     return [
-        {"n": i, "file": h.file, "chapter": h.chapter, "page": h.page}
+        {
+            "n": i,
+            "file": h.file,
+            "chapter": h.chapter,
+            "page": h.page,
+            "content_hash": getattr(h, "content_hash", None),
+            "chapter_id": getattr(h, "chapter_id", None),
+        }
         for i, h in enumerate(hits, start=1)
     ]
