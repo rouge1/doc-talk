@@ -8,6 +8,7 @@
   </form>
   {% if q %}
     {% if hits %}
+      {% if hits[0].reranked %}<p class="muted">ranked by cross-encoder relevance</p>{% endif %}
       {% for h in hits %}
         <div class="card">
           <span class="score">{{ "%.3f"|format(h.score) }}</span>

@@ -176,7 +176,9 @@ def search(
         return
     for i, h in enumerate(hits, start=1):
         chapter = h.chapter or "n/a"
-        typer.echo(f"[{i}] {h.score:.3f}  p.{h.page} · {chapter}")
+        score = h.rerank_score if h.rerank_score is not None else h.score
+        tag = "rr" if h.rerank_score is not None else "cos"
+        typer.echo(f"[{i}] {tag} {score:.3f}  p.{h.page} · {chapter}")
         typer.echo(f"      {h.text[:160].strip().replace(chr(10), ' ')}…")
 
 

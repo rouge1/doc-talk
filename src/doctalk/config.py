@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     ollama_host: str = "http://127.0.0.1:11434"
     retrieval_top_k: int = 8
 
+    # --- Reranking (cross-encoder over the ANN candidate pool) -------------
+    # bge-reranker via fastembed's TextCrossEncoder (ONNX, no torch). PLAN's v2-m3 isn't
+    # ONNX-packaged in fastembed, so we use the bge-reranker-base variant. Disable to fall back
+    # to raw ANN order (the PLAN "skip" path).
+    rerank_enabled: bool = True
+    rerank_model: str = "BAAI/bge-reranker-base"
+    rerank_candidates: int = 30  # ANN hits fetched, then re-scored down to top_k
+
     # --- Asset extraction (figures / tables / OCR) -------------------------
     # Embedded rasters smaller than this on either side are icons/rules, not figures — skipped.
     figure_min_px: int = 64

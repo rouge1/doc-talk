@@ -116,7 +116,11 @@ def search(request: Request, q: str = ""):
         from doctalk.query.retriever import retrieve
 
         hits = [
-            {"file": h.file, "chapter": h.chapter, "page": h.page, "text": h.text, "score": h.score}
+            {
+                "file": h.file, "chapter": h.chapter, "page": h.page, "text": h.text,
+                "score": h.rerank_score if h.rerank_score is not None else h.score,
+                "reranked": h.rerank_score is not None,
+            }
             for h in retrieve(q, k=10)
         ]
     return templates.TemplateResponse(request, "search.html", {"q": q, "hits": hits})
