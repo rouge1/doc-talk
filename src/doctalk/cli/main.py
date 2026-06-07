@@ -283,6 +283,59 @@ def wiki_merge(
 
 
 @app.command()
+def wiki_lint(
+    fix: bool = typer.Option(False, "--fix", help="materialize missing entity pages (safe)"),
+) -> None:
+    """Health-check the wiki: orphans, unsupported claims, unresolved entities, missing pages,
+    near-duplicates, contradictions. ``--fix`` creates absent pages (never overwrites)."""
+    from doctalk.config import get_settings
+    from doctalk.synth import lint, pages, wikirepo
+
+    wiki_dir = get_settings().wiki_dir
+    with session_scope() as session:
+        findings = lint.lint(session, wiki_dir)
+
+    if not findings:
+        typer.echo("wiki-lint: clean ✓")
+    else:
+        grouped: dict[str, list] = {}
+        for f in findings:
+            grouped.setdefault(f.kind, []).append(f)
+        for kind, items in grouped.items():
+            typer.echo(f"\n{kind}  ({len(items)})")
+            for f in items:
+                ref = f"{f.ref}: " if f.ref else ""
+                typer.echo(f"  - {ref}{f.detail}")
+
+    if fix:
+        with session_scope() as session:
+            created = lint.materialize_missing(session, wiki_dir)
+            if created:
+                wikirepo.write_page("index.md", pages.render_index(session))
+        if created:
+            wikirepo.commit(f"wiki-lint: materialize {len(created)} missing page(s)")
+            typer.echo(f"\nfixed: created {len(created)} page(s) — {', '.join(created)}")
+        else:
+            typer.echo("\nfixed: nothing to materialize")
+
+
+@app.command()
+def wiki_audit() -> None:
+    """Audit wiki↔truth integrity: every cited chunk still exists; catalog matches disk."""
+    from doctalk.config import get_settings
+    from doctalk.synth import lint
+
+    with session_scope() as session:
+        findings = lint.audit(session, get_settings().wiki_dir)
+    if not findings:
+        typer.echo("wiki-audit: no drift ✓")
+        return
+    for f in findings:
+        ref = f"{f.ref}: " if f.ref else ""
+        typer.echo(f"[{f.kind}] {ref}{f.detail}")
+
+
+@app.command()
 def wiki_init() -> None:
     """Create the wiki/ git repo scaffold (dirs + index.md/log.md/overview.md). Idempotent."""
     from doctalk.synth import wikirepo
