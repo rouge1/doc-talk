@@ -94,11 +94,16 @@ def render_index(session) -> str:
         "## Entities",
         "",
     ]
-    if pages:
-        for p in pages:
-            stem = p.path.rsplit("/", 1)[-1].removesuffix(".md")
-            out.append(f"- [[{stem}|{p.title}]] — {p.source_count} source(s)")
-    else:
+    listed = 0
+    for p in pages:
+        if p.entity_id is not None:  # skip entities merged away (their page is a redirect stub)
+            e = session.get(Entity, p.entity_id)
+            if e is not None and e.status == "merged_into":
+                continue
+        stem = p.path.rsplit("/", 1)[-1].removesuffix(".md")
+        out.append(f"- [[{stem}|{p.title}]] — {p.source_count} source(s)")
+        listed += 1
+    if not listed:
         out.append("_None yet._")
     out += ["", "## Concepts", "", "_None yet._", "", "## Topics", "", "_None yet._"]
     return "\n".join(out).rstrip() + "\n"

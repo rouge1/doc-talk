@@ -101,3 +101,17 @@ def commit(message: str) -> bool:
         return False
     _git(["add", "-A"], root)
     return _git(["commit", "-q", "-m", message], root)
+
+
+def head_sha() -> str | None:
+    """Current wiki HEAD commit sha (to stamp ``entity_merges.committed_sha``). None if no git."""
+    root = repo_dir()
+    if not (root / ".git").exists():
+        return None
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+        )
+        return out.stdout.strip() or None
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None

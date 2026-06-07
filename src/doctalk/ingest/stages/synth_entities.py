@@ -16,7 +16,7 @@ from __future__ import annotations
 from doctalk.config import get_settings
 from doctalk.db import repo
 from doctalk.ingest.dag import StageContext
-from doctalk.synth import extract
+from doctalk.synth import extract, resolve
 from doctalk.synth.normalize import norm_key
 
 
@@ -50,14 +50,13 @@ def run(ctx: StageContext) -> None:
 
     touched = set(repo.clear_synth_for_file(ctx.session, file_id))  # idempotent re-synth
 
+    # Co-extracted entities are each other's co-mentions — a disambiguation signal for the resolver.
+    all_keys = {norm_key(e.name) for e in entities if norm_key(e.name)}
+
     for ent in entities:
         key = norm_key(ent.name)
         if not key:
             continue
-        entity = repo.get_or_create_entity(
-            ctx.session, name=ent.name, type_=ent.type, norm_key=key, aliases=ent.aliases
-        )
-        touched.add(entity.id)
 
         # Deterministic provenance: which sampled chunks actually name this entity?
         needles = [ent.name.lower(), *(a.lower() for a in ent.aliases)]
@@ -68,16 +67,49 @@ def run(ctx: StageContext) -> None:
             else [{"file_id": file_id, "chunk_id": None}]
         )
 
+        # Resolve to a canonical entity (MATCH existing / NEW / DEFER) — no more exact-match-only.
+        res = resolve.resolve_candidate(
+            ctx.session,
+            name=ent.name,
+            type_=ent.type,
+            aliases=ent.aliases,
+            definition=ent.claims[0] if ent.claims else "",
+            context_text=" ".join(c.text for c in src_chunks),
+            comention_keys=all_keys - {key},
+        )
+        entity = res.entity
+        touched.add(entity.id)
+
         repo.insert_mentions(
             ctx.session,
             file_id,
-            [{"entity_id": entity.id, "chunk_id": p["chunk_id"]} for p in prov],
+            [
+                {
+                    "entity_id": entity.id,
+                    "chunk_id": p["chunk_id"],
+                    "score": res.score,
+                    "decision": res.decision,
+                    "signals": res.signals,
+                }
+                for p in prov
+            ],
         )
         for claim_text in ent.claims:
             claim = repo.insert_claim(
                 ctx.session, entity_id=entity.id, file_id=file_id, text=claim_text
             )
             repo.insert_claim_sources(ctx.session, claim.id, prov)
+
+        if res.decision == "DEFER":  # ambiguous — queue for human review
+            repo.add_entity_review(
+                ctx.session,
+                mention_surface=ent.name,
+                mention_type=ent.type,
+                file_id=file_id,
+                entity_id=entity.id,
+                payload={"definition": ent.claims[0] if ent.claims else "", "signals": res.signals},
+                llm_verdict=res.signals.get("llm"),
+            )
 
     for entity_id in sorted(touched):
         repo.recompute_entity_source_count(ctx.session, entity_id)

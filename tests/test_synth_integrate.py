@@ -53,7 +53,7 @@ def _populate(monkeypatch):
 # --- pure rendering --------------------------------------------------------
 
 
-def test_render_entity_page_has_claims_provenance_and_links(db, monkeypatch):
+def test_render_entity_page_has_claims_provenance_and_links(db, monkeypatch, stub_resolve):
     with session_scope() as s:
         _doc(s)
     _populate(monkeypatch)
@@ -77,7 +77,7 @@ def test_slug_for_is_stable_and_filesystem_safe():
 # --- the stage -------------------------------------------------------------
 
 
-def test_integrate_writes_pages_index_log_and_catalog(db, monkeypatch):
+def test_integrate_writes_pages_index_log_and_catalog(db, monkeypatch, stub_resolve):
     with session_scope() as s:
         _doc(s)
     _populate(monkeypatch)
@@ -100,7 +100,7 @@ def test_integrate_writes_pages_index_log_and_catalog(db, monkeypatch):
         assert e0.wiki_path == "entities/e0-cipher.md"
 
 
-def test_integrate_is_idempotent(db, monkeypatch):
+def test_integrate_is_idempotent(db, monkeypatch, stub_resolve):
     with session_scope() as s:
         _doc(s)
     _populate(monkeypatch)

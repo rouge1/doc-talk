@@ -28,3 +28,14 @@ def db(tmp_path, monkeypatch):
     yield
     session_mod.reset_engine()
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def stub_resolve(monkeypatch):
+    """Deterministic, model-free entity resolver for synth tests: a constant name-embedding (so the
+    embed signal is fixed) and no LLM adjudication (DEFERs fall straight to the unresolved queue).
+    Lets the resolution *logic* — block/score/decide/merge — be tested without loading a model."""
+    from doctalk.synth import resolve
+
+    monkeypatch.setattr(resolve, "_embed", lambda text: [1.0, 0.0, 0.0])
+    monkeypatch.setattr(resolve, "_adjudicate", lambda *a, **k: None)

@@ -110,7 +110,7 @@ def _run(monkeypatch):
         synth_entities.run(StageContext("a" * 64, None, s))
 
 
-def test_synth_entities_persists_with_provenance(db, monkeypatch):
+def test_synth_entities_persists_with_provenance(db, monkeypatch, stub_resolve):
     with session_scope() as s:
         fid = _doc(s)
     _run(monkeypatch)
@@ -139,7 +139,7 @@ def test_synth_entities_persists_with_provenance(db, monkeypatch):
         assert all(e.source_count == 1 for e in ents.values())
 
 
-def test_synth_entities_is_idempotent(db, monkeypatch):
+def test_synth_entities_is_idempotent(db, monkeypatch, stub_resolve):
     with session_scope() as s:
         _doc(s)
     _run(monkeypatch)

@@ -22,6 +22,8 @@ from doctalk.db.models import (
     Chunk,
     Claim,
     Entity,
+    EntityMerge,
+    EntityReview,
     Figure,
     File,
     Image,
@@ -105,6 +107,13 @@ def stats() -> None:
             n = session.scalar(select(func.count()).select_from(table))
             typer.echo(f"{label:<9} {n}")
         # Image dedup summary: distinct clusters + redundant (non-representative) images.
+        open_reviews = session.scalar(
+            select(func.count()).select_from(EntityReview).where(EntityReview.state == "open")
+        )
+        merges = session.scalar(select(func.count()).select_from(EntityMerge))
+        if open_reviews or merges:
+            typer.echo(f"resolve   {open_reviews} review(s) open · {merges} merge(s)")
+
         clustered = session.scalar(
             select(func.count()).select_from(Image).where(Image.cluster_id.is_not(None))
         )
@@ -193,6 +202,84 @@ def entities(limit: int = typer.Option(40, help="max entities to list")) -> None
             typer.echo(
                 f"[{e.type}] {e.name}{aliases}  · {claims} claim(s) · {e.source_count} source(s)"
             )
+
+
+def _resolve_entity(session, target: str) -> Entity:
+    """Find an entity by numeric id, exact norm_key, or a name substring."""
+    from doctalk.synth.normalize import norm_key
+
+    if target.isdigit():
+        entity = session.get(Entity, int(target))
+        if entity is not None:
+            return entity
+    entity = session.scalar(select(Entity).where(Entity.norm_key == norm_key(target)))
+    if entity is None:
+        entity = session.scalar(select(Entity).where(Entity.name.like(f"%{target}%")))
+    if entity is None:
+        raise typer.BadParameter(f"no entity matches {target!r} (id, norm_key, or name substring)")
+    return entity
+
+
+@app.command()
+def entity_review(limit: int = typer.Option(40, help="max queue entries")) -> None:
+    """List the open entity-resolution review queue (ambiguous DEFERs the LLM couldn't settle)."""
+    with session_scope() as session:
+        rows = repo.get_open_reviews(session, limit=limit)
+        if not rows:
+            typer.echo("(review queue empty)")
+            return
+        for r in rows:
+            payload = r.payload if isinstance(r.payload, dict) else {}
+            cands = payload.get("signals", {}).get("candidates")
+            typer.echo(
+                f"#{r.id} [{r.mention_type}] {r.mention_surface}  · entity {r.entity_id}"
+                f" · llm={r.llm_verdict or '-'}" + (f" · candidates {cands}" if cands else "")
+            )
+
+
+@app.command()
+def wiki_merge(
+    from_entity: str,
+    into_entity: str,
+    reason: str = typer.Option("manual merge", help="why (recorded in entity_merges)"),
+) -> None:
+    """Merge one entity into another (reversible). Repoints mentions/claims, rewrites the survivor
+    page, leaves a redirect stub, and commits to the wiki git repo. FROM/INTO are id/name/norm_key."""
+    from doctalk.db.models import utcnow
+    from doctalk.synth import pages, wikirepo
+    from doctalk.vector import store as vstore
+
+    with session_scope() as session:
+        src = _resolve_entity(session, from_entity)
+        dst = _resolve_entity(session, into_entity)
+        if src.id == dst.id:
+            raise typer.BadParameter("cannot merge an entity into itself")
+        src_name, src_slug = src.name, pages.slug_for(src)
+        dst_id, dst_name, dst_slug = dst.id, dst.name, pages.slug_for(dst)
+        merge_id = repo.merge_entities(session, src.id, dst.id, reason=reason).id
+
+        dst = session.get(Entity, dst_id)  # reload with merged aliases/source_count
+        survivor_path = f"entities/{dst_slug}.md"
+        md_hash = wikirepo.write_page(survivor_path, pages.render_entity_page(session, dst))
+        repo.upsert_wiki_page(
+            session, path=survivor_path, title=dst.name, kind="entity", entity_id=dst_id,
+            source_count=dst.source_count, last_synth_at=utcnow(), md_hash=md_hash,
+        )
+        wikirepo.write_page(
+            f"entities/{src_slug}.md",
+            f"# {src_name}\n\n> merged\n\nMerged into [[{dst_slug}|{dst_name}]].\n",
+        )
+        wikirepo.write_page("index.md", pages.render_index(session))
+        vstore.delete_entity_name(src.id)
+
+    committed = wikirepo.commit(f"wiki-merge: {src_name} -> {dst_name}")
+    sha = wikirepo.head_sha() if committed else None
+    if sha:
+        with session_scope() as session:
+            row = session.get(EntityMerge, merge_id)
+            if row is not None:
+                row.committed_sha = sha
+    typer.echo(f"merged '{src_name}' -> '{dst_name}'" + (f"  ({sha[:8]})" if sha else ""))
 
 
 @app.command()

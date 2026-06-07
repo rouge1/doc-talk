@@ -236,8 +236,14 @@ class Entity(Base):
     type: Mapped[str] = mapped_column(String(32))            # concept|component|protocol|person|org|…
     norm_key: Mapped[str] = mapped_column(String(512))       # normalized blocking key (resolver)
     aliases: Mapped[list] = mapped_column(JSON, default=list)
+    acronyms: Mapped[list] = mapped_column(JSON, default=list)   # short<->long forms for blocking
+    glossary_defined: Mapped[bool] = mapped_column(default=False)  # seeded from a definitions section
     wiki_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # resolution vec table
+    embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # legacy/reserved
+    name_embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # entity_names row
+    # active = a real page; unresolved = provisionally-new from a DEFER (wiki-lint surfaces it);
+    # merged_into = folded into another entity by a merge (kept as a redirect, never hard-deleted).
+    status: Mapped[str] = mapped_column(String(16), default="active")
     source_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -319,6 +325,45 @@ class Mention(Base):
     entity_id: Mapped[int] = mapped_column(
         ForeignKey("entities.id", ondelete="CASCADE"), index=True
     )
+    # The resolver's decision for this mention — auditable, and training data for a learned scorer.
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)  # MATCH|NEW|DEFER
+    signals: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class EntityReview(Base):
+    """The human review queue for ambiguous resolutions (DEFER that the LLM couldn't settle). Holds
+    the mention payload + the candidate ids/scores so a reviewer (or a later merge) has the full
+    picture. The provisional ``entity_id`` is the #unresolved page created in the meantime."""
+
+    __tablename__ = "entity_review"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mention_surface: Mapped[str] = mapped_column(String(512))
+    mention_type: Mapped[str] = mapped_column(String(32))
+    file_id: Mapped[int] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    entity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("entities.id", ondelete="SET NULL"), nullable=True
+    )
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)  # candidates, scores, context
+    llm_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)  # same|different|can't-tell
+    human_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    state: Mapped[str] = mapped_column(String(16), default="open")  # open|resolved
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class EntityMerge(Base):
+    """Audit + reversibility record for ``Merge(from→into)``. Keeps merges undoable and ties each to
+    the wiki git commit that enacted it."""
+
+    __tablename__ = "entity_merges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_id: Mapped[int] = mapped_column(Integer, index=True)
+    into_id: Mapped[int] = mapped_column(Integer, index=True)
+    reason: Mapped[str] = mapped_column(String(256), default="")
+    committed_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Image(Base):

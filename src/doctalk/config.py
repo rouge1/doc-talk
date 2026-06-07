@@ -76,6 +76,25 @@ class Settings(BaseSettings):
     # calls; the page is valid (claims + provenance + links) even when this is off or the LLM fails.
     synth_summaries: bool = True
 
+    # --- Entity resolution (synth_resolve; see docs/entity-resolution.md) ---
+    # Two-threshold band over a [0,1] score: confident MATCH only when high AND well-separated from
+    # the runner-up; confident NEW only when clearly novel; the murky middle DEFERs (LLM-adjudicated,
+    # then human) — never guessed. Bad merges are worse than fragments, so τ_high is set for
+    # precision. embed_version is part of the resolver's identity so an embed-model upgrade re-blocks.
+    resolve_tau_high: float = 0.85   # MATCH floor
+    resolve_tau_low: float = 0.45    # below this => NEW
+    resolve_margin: float = 0.15     # required gap over the 2nd-best candidate to auto-MATCH
+    resolve_block_k: int = 10        # kNN candidates pulled from the entity-name index
+    resolve_embed_version: str = "bge-small-en-v1.5"
+    # Hand-set signal weights (graduate to a learned scorer once the review queue yields labels).
+    # The two embedding signals from the spec (name + context) are folded into one name+definition
+    # vector here; co-mention overlap remains the polysemy disambiguator.
+    resolve_w_alias: float = 0.35    # exact alias/acronym hit
+    resolve_w_lexical: float = 0.15  # name token-set Jaccard
+    resolve_w_embed: float = 0.40    # name+definition embedding cosine
+    resolve_w_comention: float = 0.10  # neighbor-overlap Jaccard
+    resolve_llm_adjudicate: bool = True  # let the LLM settle DEFERs before the human queue
+
     # --- Image clustering / dedup (near-duplicate grouping over CLIP) -------
     # Images whose pairwise CLIP-vision cosine >= this threshold land in one cluster; the
     # cluster_id is the smallest file_id in the connected component (stable + order-independent,

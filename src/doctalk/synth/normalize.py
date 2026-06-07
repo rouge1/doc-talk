@@ -19,6 +19,19 @@ _LEADING_ARTICLES = {"the", "a", "an"}
 _WS = re.compile(r"\s+")
 
 
+_ACRONYM = re.compile(r"^(.+?)\s*\(([A-Za-z][A-Za-z0-9.\-]{1,15})\)\s*$")
+
+
+def acronym_pair(surface: str) -> tuple[str, str] | None:
+    """Detect a definitional ``Foo Bar (FB)`` surface and return ``(expansion_norm, acronym_norm)``
+    — the bidirectional bridge that lets "L2CAP" resolve to "Logical Link Control…". None if no
+    such pattern. High-value for specs, which literally define their acronyms."""
+    m = _ACRONYM.match(surface.strip())
+    if not m:
+        return None
+    return norm_key(m.group(1)), m.group(2).lower().replace(".", "")
+
+
 def norm_key(surface: str) -> str:
     """Normalize a surface form to its blocking key (may be empty for junk input)."""
     s = unicodedata.normalize("NFKC", surface).lower().strip()

@@ -15,6 +15,7 @@ from doctalk.config import get_settings
 
 TEXT_TABLE = "text_chunks"
 IMAGE_TABLE = "images"
+ENTITY_TABLE = "entity_names"
 NO_CHAPTER = -1  # null sentinel for chapter_id
 
 
@@ -150,4 +151,69 @@ def search_images(query_vector: list[float], k: int, where: str | None = None) -
     query = db.open_table(IMAGE_TABLE).search(query_vector).metric("cosine").limit(k)
     if where:
         query = query.where(where, prefilter=True)
+    return query.to_list()
+
+
+# --- entity name index (resolution blocking — kNN over entity name+definition vectors) ----------
+# The resolver embeds a candidate mention and ANN-searches this for nearby existing entities, then
+# scores each. ``type`` is mirrored so blocking can prefilter to compatible types.
+
+
+def _ensure_entity_table(dim: int):
+    import pyarrow as pa
+
+    db = _db()
+    if ENTITY_TABLE not in db.table_names():
+        schema = pa.schema(
+            [
+                ("entity_id", pa.int64()),
+                ("type", pa.string()),
+                ("vector", pa.list_(pa.float32(), dim)),
+            ]
+        )
+        db.create_table(ENTITY_TABLE, schema=schema)
+    return db.open_table(ENTITY_TABLE)
+
+
+def add_entity_names(rows: list[dict[str, Any]]) -> None:
+    """Append entity name-embedding rows; each needs entity_id/type/vector."""
+    if rows:
+        _ensure_entity_table(len(rows[0]["vector"])).add(rows)
+
+
+def delete_entity_name(entity_id: int) -> None:
+    db = _db()
+    if ENTITY_TABLE in db.table_names():
+        db.open_table(ENTITY_TABLE).delete(f"entity_id = {entity_id}")
+
+
+def drop_entity_names_table() -> None:
+    db = _db()
+    if ENTITY_TABLE in db.table_names():
+        db.drop_table(ENTITY_TABLE)
+
+
+def get_entity_vectors(entity_ids: list[int]) -> dict[int, list[float]]:
+    """Stored name vectors for the given entities (for scoring candidates found via non-kNN keys)."""
+    db = _db()
+    if ENTITY_TABLE not in db.table_names() or not entity_ids:
+        return {}
+    wanted = set(entity_ids)
+    return {
+        r["entity_id"]: r["vector"]
+        for r in db.open_table(ENTITY_TABLE).to_arrow().to_pylist()
+        if r["entity_id"] in wanted
+    }
+
+
+def search_entity_names(query_vector: list[float], k: int, type_: str | None = None) -> list[dict]:
+    """ANN over entity name vectors (cosine), optionally prefiltered to one type. Returns rows with
+    ``entity_id`` and ``_distance``."""
+    db = _db()
+    if ENTITY_TABLE not in db.table_names():
+        return []
+    query = db.open_table(ENTITY_TABLE).search(query_vector).metric("cosine").limit(k)
+    if type_:
+        safe = type_.replace("'", "")
+        query = query.where(f"type = '{safe}'", prefilter=True)
     return query.to_list()

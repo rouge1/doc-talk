@@ -18,6 +18,8 @@ from doctalk.db.models import (
     Claim,
     ClaimSource,
     Entity,
+    EntityMerge,
+    EntityReview,
     Figure,
     File,
     Image,
@@ -414,6 +416,7 @@ def clear_synth_for_file(session: Session, file_id: int) -> list[int]:
     touched |= set(session.scalars(select(Claim.entity_id).where(Claim.file_id == file_id)))
     session.execute(delete(Mention).where(Mention.file_id == file_id))
     session.execute(delete(Claim).where(Claim.file_id == file_id))  # claim_sources cascade
+    session.execute(delete(EntityReview).where(EntityReview.file_id == file_id))
     return sorted(touched)
 
 
@@ -513,3 +516,152 @@ def get_wiki_pages_by_kind(session: Session, kind: str) -> list[WikiPage]:
     return list(
         session.scalars(select(WikiPage).where(WikiPage.kind == kind).order_by(WikiPage.title))
     )
+
+
+# --- entity resolution (synth_resolve) -------------------------------------
+
+
+def create_entity(
+    session: Session,
+    *,
+    name: str,
+    type_: str,
+    norm_key: str,
+    aliases: list[str] | None = None,
+    acronyms: list[str] | None = None,
+    status: str = "active",
+    glossary_defined: bool = False,
+) -> Entity:
+    """Mint a new canonical entity (a resolver NEW/DEFER decision). Embedding is attached after."""
+    entity = Entity(
+        name=name,
+        type=type_,
+        norm_key=norm_key,
+        aliases=list(aliases or []),
+        acronyms=list(acronyms or []),
+        status=status,
+        glossary_defined=glossary_defined,
+    )
+    session.add(entity)
+    session.flush()
+    return entity
+
+
+def add_entity_aliases(session: Session, entity_id: int, surfaces: list[str]) -> None:
+    """Accumulate new surface variants onto an entity (a MATCH that saw a fresh spelling)."""
+    entity = session.get(Entity, entity_id)
+    if entity is None or not surfaces:
+        return
+    merged = list(dict.fromkeys([*(entity.aliases or []), *surfaces]))
+    if merged != (entity.aliases or []):
+        entity.aliases = merged
+
+
+def set_entity_name_embedding_id(session: Session, entity_id: int, embedding_id: int | None) -> None:
+    entity = session.get(Entity, entity_id)
+    if entity is not None:
+        entity.name_embedding_id = embedding_id
+
+
+def set_entity_status(session: Session, entity_id: int, status: str) -> None:
+    entity = session.get(Entity, entity_id)
+    if entity is not None:
+        entity.status = status
+
+
+def find_entities_by_norm_keys(
+    session: Session, keys: set[str], types: set[str] | None = None
+) -> list[Entity]:
+    """Indexed blocking: entities whose norm_key is in ``keys`` (exact/alias/acronym-normalized),
+    excluding ones already merged away. Optionally gated to compatible types."""
+    if not keys:
+        return []
+    query = select(Entity).where(
+        Entity.norm_key.in_(list(keys)), Entity.status != "merged_into"
+    )
+    if types:
+        query = query.where(Entity.type.in_(list(types)))
+    return list(session.scalars(query))
+
+
+def scan_alias_acronym_candidates(
+    session: Session, surface_norms: set[str], types: set[str] | None = None, limit: int = 300
+) -> list[Entity]:
+    """Bounded blocking by stored alias/acronym surfaces (the acronym↔expansion bridge). Compares
+    lowercased surfaces; ``limit`` caps the scan (a learned/indexed path supersedes this at scale)."""
+    if not surface_norms:
+        return []
+    query = select(Entity).where(Entity.status != "merged_into")
+    if types:
+        query = query.where(Entity.type.in_(list(types)))
+    out: list[Entity] = []
+    for entity in session.scalars(query.limit(limit)):
+        toks = {a.lower().strip() for a in (entity.aliases or [])}
+        toks |= {a.lower().strip() for a in (entity.acronyms or [])}
+        if toks & surface_norms:
+            out.append(entity)
+    return out
+
+
+def add_entity_review(
+    session: Session,
+    *,
+    mention_surface: str,
+    mention_type: str,
+    file_id: int,
+    entity_id: int | None,
+    payload: dict,
+    llm_verdict: str | None = None,
+) -> EntityReview:
+    """Queue an ambiguous resolution for human review (the genuinely-hard slice)."""
+    review = EntityReview(
+        mention_surface=mention_surface,
+        mention_type=mention_type,
+        file_id=file_id,
+        entity_id=entity_id,
+        payload=payload,
+        llm_verdict=llm_verdict,
+    )
+    session.add(review)
+    session.flush()
+    return review
+
+
+def get_open_reviews(session: Session, limit: int | None = None) -> list[EntityReview]:
+    query = select(EntityReview).where(EntityReview.state == "open").order_by(EntityReview.id)
+    if limit is not None:
+        query = query.limit(limit)
+    return list(session.scalars(query))
+
+
+def merge_entities(
+    session: Session, from_id: int, into_id: int, reason: str = ""
+) -> EntityMerge:
+    """Fold ``from`` into ``into`` (reversible, auditable). Repoints mentions + claims (claim_sources
+    ride along on the claim), unions aliases/acronyms, marks ``from`` merged_into, recomputes the
+    survivor's source count, and records an ``entity_merges`` row. DB-only — the caller handles the
+    name-vector cleanup, page redirect, and git commit."""
+    if from_id == into_id:
+        raise ValueError("merge_entities: from and into are the same entity")
+    src = session.get(Entity, from_id)
+    dst = session.get(Entity, into_id)
+    if src is None or dst is None:
+        raise ValueError(f"merge_entities: missing entity ({from_id} -> {into_id})")
+
+    session.execute(update(Mention).where(Mention.entity_id == from_id).values(entity_id=into_id))
+    session.execute(update(Claim).where(Claim.entity_id == from_id).values(entity_id=into_id))
+
+    dst.aliases = list(dict.fromkeys([*(dst.aliases or []), *(src.aliases or []), src.name]))
+    dst.acronyms = list(dict.fromkeys([*(dst.acronyms or []), *(src.acronyms or [])]))
+    src.status = "merged_into"
+    src.wiki_path = dst.wiki_path  # redirect
+
+    merge = EntityMerge(from_id=from_id, into_id=into_id, reason=reason)
+    session.add(merge)
+    session.flush()
+    recompute_entity_source_count(session, into_id)
+    return merge
+
+
+def get_entity_merges(session: Session) -> list[EntityMerge]:
+    return list(session.scalars(select(EntityMerge).order_by(EntityMerge.id)))

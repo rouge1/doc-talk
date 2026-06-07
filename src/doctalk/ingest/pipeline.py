@@ -49,7 +49,12 @@ def _synth_entities_stage(dep: str) -> Stage:
         "synth_entities",
         synth_entities.run,
         model_version=s.synth_model or s.chat_model,
-        params={"max_chunks": s.synth_max_chunks, "chunk_chars": s.synth_chunk_chars},
+        params={
+            "max_chunks": s.synth_max_chunks,
+            "chunk_chars": s.synth_chunk_chars,
+            # resolution is part of this stage; an embed-model upgrade must re-block (re-resolve).
+            "embed_version": s.resolve_embed_version,
+        },
         deps=(dep,),
     )
 
