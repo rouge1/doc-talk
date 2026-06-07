@@ -9,6 +9,12 @@
   <p class="muted">Answers run on a local model and may take ~a minute.</p>
   {% if result %}
     <div class="answer">{{ result.answer }}</div>
+    {% if result.wiki_citations %}
+      <h2>From the wiki</h2>
+      {% for w in result.wiki_citations %}
+        <div class="muted">• {{ w.name }} <span class="muted">({{ w.type }})</span></div>
+      {% endfor %}
+    {% endif %}
     {% if result.citations %}
       <h2>Sources</h2>
       {% for c in result.citations %}

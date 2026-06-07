@@ -161,9 +161,9 @@ def search(request: Request, q: str = ""):
 def chat(request: Request, q: str = ""):
     result = None
     if q.strip():
-        from doctalk.query.chat import answer
+        from doctalk.query.wikichat import answer  # wiki-first, chunk-RAG fallback
 
-        result = answer(q, k=6)
+        result = answer(q, k_chunks=6)
     return templates.TemplateResponse(request, "chat.html", {"q": q, "result": result})
 
 

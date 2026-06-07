@@ -330,16 +330,30 @@ def ask(
     question: str,
     file: str = typer.Option(None, help="restrict to one document (path or content_hash)"),
     k: int = typer.Option(8, help="number of chunks to retrieve as context"),
+    raw: bool = typer.Option(False, "--raw", help="chunk-RAG only; skip the synthesized wiki"),
+    save: bool = typer.Option(False, "--save", help="file the answer to wiki/queries/ (compounds)"),
 ) -> None:
-    """Ask a question; answer is grounded in retrieved chunks and cites (file, chapter, page)."""
-    from doctalk.query.chat import answer
+    """Ask a question. Wiki-first: answered from the synthesized pages, chunk-RAG fills gaps.
+    ``--raw`` uses chunk-RAG only; ``--save`` files the answer back to the wiki."""
+    file_id = _target_file_id(file)
+    if raw:
+        from doctalk.query.chat import answer
 
-    result = answer(question, k=k, file_id=_target_file_id(file))
+        result = answer(question, k=k, file_id=file_id)
+    else:
+        from doctalk.query.wikichat import answer as wiki_answer
+
+        result = wiki_answer(question, k_chunks=k, file_id=file_id, save=save)
+
     typer.echo(result["answer"])
+    for cite in result.get("wiki_citations", []):
+        typer.echo(f"  • wiki: {cite['name']} ({cite['type']})")
     if result["citations"]:
         typer.echo("\nSources:")
         for c in result["citations"]:
             typer.echo(f"  [{c['n']}] {c['file']} · {c['chapter'] or 'n/a'} · p.{c['page']}")
+    if result.get("saved_path"):
+        typer.echo(f"\nfiled to wiki/{result['saved_path']}")
 
 
 @app.command()
