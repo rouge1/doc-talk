@@ -137,6 +137,27 @@ def test_page_view_rejects_missing_or_unknown(client):
     assert client.get(f"/api/doc/{'a' * 64}/page/1").status_code == 404    # path not on disk
 
 
+def test_gallery_lists_and_collapses_clusters(client):
+    from doctalk.db import repo
+    from doctalk.db.session import session_scope
+    with session_scope() as s:
+        for i, h in enumerate(["c" * 64, "d" * 64]):  # two near-dups in one cluster
+            repo.upsert_file(s, content_hash=h, path=f"/{h}", filename=f"img{i}.png",
+                             format="png", mime="image/png", byte_size=2048)
+            s.flush()
+            fid = repo.get_file_id(s, h)
+            repo.upsert_image(s, fid, width=10, height=10, cluster_id=99)
+
+    data = client.get("/api/gallery").json()
+    assert len(data["items"]) == 1                 # cluster collapsed to one card
+    item = data["items"][0]
+    assert item["dups"] == 1 and item["kb"] == 2 and item["image"].startswith("/api/image/")
+
+
+def test_image_endpoint_404_for_missing(client):
+    assert client.get("/api/image/999999").status_code == 404
+
+
 def test_office_doc_renders_and_locates_page(client, tmp_path):
     import shutil
     pytest.importorskip("docx")

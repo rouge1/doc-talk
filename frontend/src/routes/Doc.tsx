@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api";
+import { api, chapterPath } from "../api";
 import { useFetch } from "../useFetch";
 
 export default function Doc() {
@@ -24,7 +24,7 @@ export default function Doc() {
         <ol className="outline">
           {data.chapters.map((c) => (
             <li key={c.id} style={{ marginLeft: `${(c.level - 1) * 1.4}rem` }}>
-              <Link to={`/doc/${hash}/chapter/${c.id}`}>{c.title}</Link>
+              <Link to={chapterPath(hash, data.format, c)}>{c.title}</Link>
               <span className="leader" />
               <span className="pageno mono tnum">p.{c.page}</span>
             </li>

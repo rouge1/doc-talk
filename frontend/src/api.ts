@@ -100,8 +100,30 @@ export interface Outline {
   hash: string;
   name: string;
   format: string;
-  chapters: { id: number; title: string; level: number; page: number }[];
+  chapters: {
+    id: number;
+    title: string;
+    level: number;
+    page: number;
+    first_chunk: number | null;
+  }[];
 }
+
+const RENDERABLE_FMT = /^(pdf|docx|doc|odt|rtf|pptx|ppt|xlsx)$/i;
+
+// Open a document section on its ORIGINAL rendered page — but plainly (no highlight): browsing the
+// table of contents isn't a search hit, so there's no specific passage to mark. The reflowed-text
+// reader is the fallback for formats we can't rasterize.
+export const chapterPath = (
+  hash: string,
+  format: string,
+  c: { id: number; page: number; first_chunk: number | null },
+) => {
+  if (format.toLowerCase() === "pdf" && c.page) return `/doc/${hash}/page/${c.page}`;
+  if (RENDERABLE_FMT.test(format) && c.first_chunk)
+    return `/doc/${hash}/passage/${c.first_chunk}?nohl=1`; // locate the page, but don't highlight
+  return `/doc/${hash}/chapter/${c.id}`;
+};
 
 export interface ChapterRead {
   hash: string;
@@ -116,6 +138,24 @@ export interface Rect {
   y: number;
   w: number;
   h: number;
+}
+
+export interface GalleryItem {
+  file_id: number;
+  name: string;
+  desc: string | null;
+  fmt: string;
+  kb: number;
+  score: number | null;
+  when: string | null;
+  geo: string | null;
+  dups: number;
+  image: string;
+}
+
+export interface Gallery {
+  query: string;
+  items: GalleryItem[];
 }
 
 export interface PageInfo {
@@ -149,6 +189,13 @@ export const api = {
     get<PageInfo>(`/api/doc/${hash}/page/${page}${chunk ? `?chunk_id=${chunk}` : ""}`),
   find: (hash: string, chunk: number) =>
     get<{ page: number }>(`/api/doc/${hash}/find?chunk_id=${chunk}`),
+  gallery: (q: string, fmt: string, minKb: string) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (fmt) p.set("fmt", fmt);
+    if (minKb) p.set("min_kb", minKb);
+    return get<Gallery>(`/api/gallery${p.toString() ? `?${p}` : ""}`);
+  },
 };
 
 const reExt = (file: string | null | undefined, re: RegExp) => !!file && re.test(file);

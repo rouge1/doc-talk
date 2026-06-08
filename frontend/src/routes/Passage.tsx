@@ -1,11 +1,14 @@
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 
-// Resolve a chunk to the page that holds it in the rendered (converted) document, then hand off
-// to the page viewer. Keeps page nav working from a real page number rather than re-locating.
+// Resolve a chunk to the page that holds it in the rendered (converted) document, then hand off to
+// the page viewer. Keeps page nav working from a real page number rather than re-locating. With
+// ?nohl (table-of-contents browsing) it opens the page plainly, without a highlight.
 export default function Passage() {
   const { hash = "", chunk = "" } = useParams();
+  const [params] = useSearchParams();
+  const noHighlight = params.has("nohl");
   const { data, error, loading } = useFetch(
     () => api.find(hash, Number(chunk)),
     `find:${hash}:${chunk}`,
@@ -13,5 +16,6 @@ export default function Passage() {
 
   if (loading) return <div className="loading">Rendering the original document…</div>;
   if (error || !data) return <div className="empty">Couldn't locate this passage.</div>;
-  return <Navigate to={`/doc/${hash}/page/${data.page}?focus=${chunk}`} replace />;
+  const to = `/doc/${hash}/page/${data.page}${noHighlight ? "" : `?focus=${chunk}`}`;
+  return <Navigate to={to} replace />;
 }

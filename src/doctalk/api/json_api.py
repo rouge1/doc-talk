@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 
 from doctalk.api.wikimd import render
@@ -121,6 +121,51 @@ def search(q: str = "", k: int = 8) -> dict:
     }
 
 
+@router.get("/gallery")
+def gallery(q: str = "", fmt: str = "", min_kb: float | None = None) -> dict:
+    """Hybrid image search (CLIP text->image within a metadata prefilter), with near-duplicates
+    collapsed to one card per cluster (the rest counted as '+N similar')."""
+    from doctalk.query.hybrid import ImageFilter, find_images, list_images
+
+    filt = ImageFilter(
+        format=fmt or None, min_bytes=int(min_kb * 1024) if min_kb else None
+    )
+    hits = find_images(q, filt, k=24) if q.strip() else list_images(filt, limit=48)
+    items: list[dict] = []
+    by_cluster: dict[object, dict] = {}
+    for h in hits:
+        key = h.cluster_id if h.cluster_id is not None else f"f{h.file_id}"
+        if key in by_cluster:
+            by_cluster[key]["dups"] += 1
+            continue
+        item = {
+            "file_id": h.file_id,
+            "name": h.filename,
+            "desc": h.description,
+            "fmt": h.format,
+            "kb": h.byte_size // 1024,
+            "score": h.score,
+            "when": h.exif_datetime.date().isoformat() if h.exif_datetime else None,
+            "geo": h.geo_country,
+            "dups": 0,
+            "image": f"/api/image/{h.file_id}",
+        }
+        by_cluster[key] = item
+        items.append(item)
+    return {"query": q, "items": items}
+
+
+@router.get("/image/{file_id}")
+def image(file_id: int) -> FileResponse:
+    """Serve an image's original bytes (for the gallery + any image reference)."""
+    with session_scope() as s:
+        f = s.get(File, file_id)
+        if f is None or not os.path.isfile(f.path):
+            raise HTTPException(status_code=404, detail="image not found")
+        path, mime = f.path, f.mime
+    return FileResponse(path, media_type=mime)
+
+
 def _stem(path: str | None) -> str | None:
     return path.rsplit("/", 1)[-1][:-3] if path else None
 
@@ -200,12 +245,21 @@ def doc(content_hash: str) -> dict:
         f = repo.get_file(s, content_hash)
         if f is None:
             raise HTTPException(status_code=404, detail="document not found")
+        # First chunk per chapter (one pass), so the outline can open the ORIGINAL page at the
+        # section start and highlight it — same as a search hit.
+        first_chunk: dict[int, int] = {}
+        for cid, chid in s.execute(
+            select(Chunk.id, Chunk.chapter_id).where(Chunk.file_id == f.id).order_by(Chunk.ord)
+        ):
+            if chid is not None and chid not in first_chunk:
+                first_chunk[chid] = cid
         return {
             "hash": content_hash,
             "name": f.filename,
             "format": f.format,
             "chapters": [
-                {"id": c.id, "title": c.title, "level": c.level, "page": c.page_start}
+                {"id": c.id, "title": c.title, "level": c.level, "page": c.page_start,
+                 "first_chunk": first_chunk.get(c.id)}
                 for c in repo.get_chapters(s, f.id)
             ],
         }
