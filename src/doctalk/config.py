@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     wiki_dir: Path = Path("wiki")          # Phase 4 synthesis git repo
     lance_dir: Path = Path("data/lance")   # derived vector index
     figures_dir: Path = Path("data/figures")  # extracted PDF figure rasters (derived)
+    rendered_dir: Path = Path("data/rendered")  # office docs rendered to PDF for the page viewer
 
     # --- Hardware budget ---------------------------------------------------
     vram_budget_gb: int = 8                # RTX 3070 Ti Laptop wall; one model resident at a time

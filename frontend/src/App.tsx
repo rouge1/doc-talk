@@ -8,6 +8,7 @@ import Chat from "./routes/Chat";
 import Doc from "./routes/Doc";
 import Reader from "./routes/Reader";
 import PageView from "./routes/PageView";
+import Passage from "./routes/Passage";
 
 function Masthead() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/doc/:hash" element={<Doc />} />
           <Route path="/doc/:hash/chapter/:chapterId" element={<Reader />} />
           <Route path="/doc/:hash/page/:page" element={<PageView />} />
+          <Route path="/doc/:hash/passage/:chunk" element={<Passage />} />
         </Routes>
       </main>
     </>

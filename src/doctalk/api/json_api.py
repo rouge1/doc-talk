@@ -241,18 +241,94 @@ def doc_chapter(content_hash: str, chapter_id: int) -> dict:
         }
 
 
-def _pdf_path(content_hash: str) -> str:
-    """Resolve a PDF's on-disk path, or raise 404/415. Reading the original is the point — we
-    rasterize the real page, not a re-render of the extracted text."""
+# Formats LibreOffice can render to PDF — so the page viewer shows the *real* document (layout,
+# tables, figures), not reflowed text, for office docs as well as native PDFs.
+_RENDERABLE = {"pdf", "docx", "doc", "odt", "rtf", "pptx", "ppt", "xlsx"}
+
+
+def _convert_to_pdf(src_path: str, content_hash: str) -> str | None:
+    """Render an office document to PDF via headless LibreOffice, cached by content_hash. Returns
+    the cached PDF path, or None if conversion isn't possible (binary missing / failure)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    from doctalk.config import get_settings
+
+    out_dir = get_settings().rendered_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = out_dir / f"{content_hash}.pdf"
+    if target.is_file():
+        return str(target)
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if soffice is None:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            subprocess.run(
+                [soffice, "--headless", f"-env:UserInstallation=file://{tmp}/profile",
+                 "--convert-to", "pdf", "--outdir", tmp, src_path],
+                check=True, capture_output=True, timeout=120,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+        produced = Path(tmp) / (Path(src_path).stem + ".pdf")
+        if not produced.is_file():
+            return None
+        shutil.move(str(produced), str(target))
+    return str(target)
+
+
+def _render_pdf_path(content_hash: str) -> tuple[str, bool]:
+    """Path to a renderable PDF for a document, and whether it's a *native* PDF (vs converted).
+    Native PDFs keep their real page numbers; converted office docs need chunk→page location."""
     with session_scope() as s:
         f = repo.get_file(s, content_hash)
     if f is None:
         raise HTTPException(status_code=404, detail="document not found")
-    if f.format != "pdf":
-        raise HTTPException(status_code=415, detail="page view is available for PDFs only")
+    if f.format not in _RENDERABLE:
+        raise HTTPException(status_code=415, detail="page view is unavailable for this format")
     if not os.path.isfile(f.path):
         raise HTTPException(status_code=404, detail="original file is no longer on disk")
-    return f.path
+    if f.format == "pdf":
+        return f.path, True
+    pdf = _convert_to_pdf(f.path, content_hash)
+    if pdf is None:
+        raise HTTPException(status_code=503, detail="could not render this document for viewing")
+    return pdf, False
+
+
+def _locate_page(doc, text: str) -> int:
+    """The 1-based page of a rendered PDF that best contains a chunk's text — needed for office
+    docs, whose stored 'page' is a block index, not a rendered page."""
+    lines = [ln.strip() for ln in text.split("\n") if len(ln.strip()) >= 8]
+    if not lines:
+        return 1
+    best_page, best_hits = 1, -1
+    for i in range(doc.page_count):
+        hits = sum(1 for ln in lines if doc[i].search_for(ln))
+        if hits > best_hits:
+            best_hits, best_page = hits, i + 1
+    return best_page
+
+
+@router.get("/doc/{content_hash}/find")
+def doc_find(content_hash: str, chunk_id: int) -> dict:
+    """Resolve a chunk to the page that holds it in the rendered document (native page for PDFs,
+    located page for office docs). The SPA calls this before opening the page viewer for non-PDFs."""
+    with session_scope() as s:
+        f = repo.get_file(s, content_hash)
+        chunk = s.get(Chunk, chunk_id)
+        if f is None or chunk is None:
+            raise HTTPException(status_code=404, detail="not found")
+        if f.format == "pdf":
+            return {"page": chunk.page}
+        chunk_text = chunk.text
+    import fitz
+
+    path, _ = _render_pdf_path(content_hash)
+    with fitz.open(path) as doc:
+        return {"page": _locate_page(doc, chunk_text)}
 
 
 @router.get("/doc/{content_hash}/page/{page}.png")
@@ -260,7 +336,7 @@ def doc_page_png(content_hash: str, page: int, zoom: float = 2.0) -> Response:
     """Rasterize one page of the original PDF to PNG (the real document, not reflowed text)."""
     import fitz
 
-    path = _pdf_path(content_hash)
+    path, _ = _render_pdf_path(content_hash)
     zoom = max(1.0, min(zoom, 4.0))
     with fitz.open(path) as doc:
         if not (1 <= page <= doc.page_count):
@@ -306,7 +382,7 @@ def doc_page(content_hash: str, page: int, chunk_id: int | None = None) -> dict:
     section highlighted."""
     import fitz
 
-    path = _pdf_path(content_hash)
+    path, _ = _render_pdf_path(content_hash)
     chunk_text = None
     if chunk_id is not None:
         with session_scope() as s:

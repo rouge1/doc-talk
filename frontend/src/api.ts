@@ -147,12 +147,19 @@ export const api = {
   chapter: (hash: string, id: number) => get<ChapterRead>(`/api/doc/${hash}/chapter/${id}`),
   page: (hash: string, page: number, chunk?: number | null) =>
     get<PageInfo>(`/api/doc/${hash}/page/${page}${chunk ? `?chunk_id=${chunk}` : ""}`),
+  find: (hash: string, chunk: number) =>
+    get<{ page: number }>(`/api/doc/${hash}/find?chunk_id=${chunk}`),
 };
 
-const isPdf = (file?: string | null) => !!file && file.toLowerCase().endsWith(".pdf");
+const reExt = (file: string | null | undefined, re: RegExp) => !!file && re.test(file);
+const PDF = /\.pdf$/i;
+// LibreOffice-renderable office formats — shown as the real page too (via a one-time locate).
+const OFFICE = /\.(docx|doc|odt|rtf|pptx|ppt|xlsx)$/i;
 
-// Where a search hit / citation should open. PDFs go to the original-page viewer (words
-// highlighted on the real page); everything else to the reflowed-text chapter reader.
+// Where a search hit / citation should open, keeping the original document on screen:
+//  - native PDF: straight to the page viewer (the page is known);
+//  - office doc: the passage route, which locates the rendered page first;
+//  - otherwise: the reflowed-text chapter reader.
 export const sourcePath = (h: {
   content_hash: string | null;
   file?: string | null;
@@ -161,8 +168,10 @@ export const sourcePath = (h: {
   chunk_id?: number | null;
 }) => {
   if (!h.content_hash) return "#";
-  if (isPdf(h.file) && h.page)
+  if (reExt(h.file, PDF) && h.page)
     return `/doc/${h.content_hash}/page/${h.page}${h.chunk_id ? `?focus=${h.chunk_id}` : ""}`;
+  if (reExt(h.file, OFFICE) && h.chunk_id)
+    return `/doc/${h.content_hash}/passage/${h.chunk_id}`;
   if (h.chapter_id)
     return `/doc/${h.content_hash}/chapter/${h.chapter_id}${h.chunk_id ? `?focus=${h.chunk_id}` : ""}`;
   return `/doc/${h.content_hash}`;

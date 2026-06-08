@@ -131,10 +131,46 @@ def test_pdf_page_render_and_highlight_rects(client, tmp_path):
     assert client.get(f"/api/doc/{'p' * 64}/page/99").status_code == 404   # out of range
 
 
-def test_page_view_rejects_non_pdf(client):
+def test_page_view_rejects_missing_or_unknown(client):
     _seed()  # a.pdf is registered with a non-existent path
     assert client.get("/api/doc/deadbeef/page/1").status_code == 404
     assert client.get(f"/api/doc/{'a' * 64}/page/1").status_code == 404    # path not on disk
+
+
+def test_office_doc_renders_and_locates_page(client, tmp_path):
+    import shutil
+    pytest.importorskip("docx")
+    if not (shutil.which("soffice") or shutil.which("libreoffice")):
+        pytest.skip("LibreOffice not available for docx->pdf rendering")
+
+    import docx
+    docx_path = tmp_path / "note.docx"
+    d = docx.Document()
+    d.add_paragraph("Preheat the oven and bake the cake thoroughly.")
+    d.save(str(docx_path))
+
+    from doctalk.config import get_settings
+    get_settings().rendered_dir = tmp_path / "rendered"   # isolate the conversion cache
+    from doctalk.db import repo
+    from doctalk.db.session import session_scope
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="d" * 64, path=str(docx_path), filename="note.docx",
+                         format="docx", mime="x", byte_size=docx_path.stat().st_size)
+        s.flush()
+        fid = repo.get_file_id(s, "d" * 64)
+        ch = repo.insert_chapters(s, fid, [{"level": 1, "ord": 0, "title": "S", "page_start": 1,
+                                            "page_end": 1, "source": "outline", "parent_ord": None}])[0]
+        repo.insert_chunks(s, fid, [{"chapter_id": ch.id, "page": 7, "ord": 0,  # block index, not a page
+                                     "char_count": 40, "text": "bake the cake thoroughly"}])
+        cid = repo.get_chunks(s, fid)[0].id
+
+    # find resolves the chunk to a real rendered page (not the stored block index 7)
+    found = client.get(f"/api/doc/{'d' * 64}/find?chunk_id={cid}").json()
+    assert found["page"] == 1
+    info = client.get(f"/api/doc/{'d' * 64}/page/1?chunk_id={cid}").json()
+    assert len(info["rects"]) >= 1                          # the docx words located on the rendered page
+    png = client.get(f"/api/doc/{'d' * 64}/page/1.png")
+    assert png.status_code == 200 and png.headers["content-type"] == "image/png"
 
 
 def test_entity_aliases_drop_the_canonical_name(client):
