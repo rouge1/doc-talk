@@ -34,6 +34,11 @@ data/figures/
 # (one commit per ingested source). Runtime data, not repo code.
 wiki/
 
+# Frontend (Phase 3 React/Vite app) build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
 # OS / editor cruft
 .DS_Store
 *.swp

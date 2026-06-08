@@ -24,6 +24,11 @@ from doctalk.ingest.pipeline import IMAGE_FORMATS
 app = FastAPI(title="doctalk")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+# JSON API for the Phase 3 React frontend (the Jinja routes below stay intact).
+from doctalk.api.json_api import router as json_router  # noqa: E402
+
+app.include_router(json_router)
+
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
