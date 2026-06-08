@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %} · wiki{% endblock %}
+{% block content %}
+  <div class="wiki-hero">
+    <h1>The synthesis wiki</h1>
+    <p class="lede">An LLM-authored, compounding knowledge base — entities and claims distilled from
+      your documents, interlinked and traced back to their sources.</p>
+    <div class="wiki-stats">
+      <div><b>{{ totals.entities }}</b><span>entities</span></div>
+      <div><b>{{ totals.claims }}</b><span>claims</span></div>
+      <div><b>{{ totals.queries }}</b><span>queries</span></div>
+    </div>
+    {% if reviews %}
+      <a class="review-banner" href="/wiki/review">⚖ {{ reviews }} resolution{{ "s" if reviews != 1 }} to review</a>
+    {% endif %}
+  </div>
+
+  {% if groups %}
+    {% for type, items in groups %}
+      <section class="type-group">
+        <h2 class="type-head">{{ type }} · {{ items|length }}</h2>
+        <ul class="entity-list">
+          {% for it in items %}
+            <li>
+              {% if it.stem %}<a href="/wiki/page/{{ it.stem }}">{{ it.name }}</a>
+              {% else %}{{ it.name }}{% endif %}
+              <div class="meta">{{ it.claims }} claim{{ "s" if it.claims != 1 }} · {{ it.sources }} source{{ "s" if it.sources != 1 }}</div>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  {% else %}
+    <p class="muted" style="margin-top:1.5rem">No entities synthesized yet. Ingest a document, then run
+      <code>doctalk wiki-init</code> — synthesis fills this in.</p>
+  {% endif %}
+
+  {% if queries %}
+    <section class="type-group">
+      <h2 class="type-head">queries · {{ queries|length }}</h2>
+      <ul class="entity-list">
+        {% for q in queries %}
+          <li><a href="/wiki/page/{{ q.stem }}">{{ q.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+{% endblock %}

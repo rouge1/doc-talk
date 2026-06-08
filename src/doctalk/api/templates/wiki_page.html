@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %} · wiki{% endblock %}
+{% block content %}
+  <p class="crumb"><a href="/wiki" class="crumb-wiki">Wiki</a> / {{ kind }}</p>
+  <article class="wiki-doc">{{ body }}</article>
+{% endblock %}

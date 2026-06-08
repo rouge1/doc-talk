@@ -8,6 +8,7 @@ threadpool. Templates live alongside this module.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -165,6 +166,76 @@ def chat(request: Request, q: str = ""):
 
         result = answer(q, k_chunks=6)
     return templates.TemplateResponse(request, "chat.html", {"q": q, "result": result})
+
+
+# --- synthesis wiki browser ------------------------------------------------
+_SLUG = re.compile(r"^[a-z0-9-]+$")
+
+
+@app.get("/wiki", response_class=HTMLResponse)
+def wiki_index(request: Request):
+    """The synthesis wiki catalog: entities grouped by type, plus queries and the review queue."""
+    groups: dict[str, list[dict]] = {}
+    queries: list[dict] = []
+    n_claims = reviews = 0
+    with session_scope() as s:
+        for e in repo.get_entities(s):
+            if e.status != "active":
+                continue
+            claims = len(repo.get_claims_for_entity(s, e.id))
+            n_claims += claims
+            groups.setdefault(e.type, []).append({
+                "name": e.name,
+                "stem": Path(e.wiki_path).stem if e.wiki_path else None,
+                "sources": e.source_count,
+                "claims": claims,
+            })
+        queries = [
+            {"title": p.title, "stem": Path(p.path).stem}
+            for p in repo.get_wiki_pages_by_kind(s, "query")
+        ]
+        reviews = len(repo.get_open_reviews(s))
+    n_entities = sum(len(v) for v in groups.values())
+    ordered = sorted(groups.items())  # types alphabetical; entities sorted within
+    for _, items in ordered:
+        items.sort(key=lambda it: it["name"].lower())
+    return templates.TemplateResponse(
+        request, "wiki_index.html",
+        {"groups": ordered, "queries": queries, "reviews": reviews,
+         "totals": {"entities": n_entities, "claims": n_claims, "queries": len(queries)}},
+    )
+
+
+@app.get("/wiki/review", response_class=HTMLResponse)
+def wiki_review(request: Request):
+    """The open entity-resolution review queue (ambiguous DEFERs awaiting a human)."""
+    with session_scope() as s:
+        rows = [
+            {"surface": r.mention_surface, "type": r.mention_type,
+             "llm": r.llm_verdict, "entity_id": r.entity_id}
+            for r in repo.get_open_reviews(s)
+        ]
+    return templates.TemplateResponse(request, "wiki_review.html", {"rows": rows})
+
+
+@app.get("/wiki/page/{stem}", response_class=HTMLResponse)
+def wiki_page(request: Request, stem: str):
+    """Render an on-disk wiki page (the authored markdown is the source of truth)."""
+    if not _SLUG.match(stem):  # slug-only: no path traversal
+        return HTMLResponse("not found", status_code=404)
+    from doctalk.config import get_settings
+    from doctalk.api.wikimd import render
+
+    kinds = {"entities": "entity", "queries": "query", "concepts": "concept", "topics": "topic"}
+    wiki_dir = get_settings().wiki_dir
+    for sub, label in kinds.items():
+        path = wiki_dir / sub / f"{stem}.md"
+        if path.is_file():
+            body = render(path.read_text(encoding="utf-8"))
+            return templates.TemplateResponse(
+                request, "wiki_page.html", {"body": body, "kind": label}
+            )
+    return HTMLResponse("wiki page not found", status_code=404)
 
 
 def _opt_float(raw: str) -> float | None:

@@ -37,6 +37,49 @@
     .grid figcaption { padding:.55rem .7rem; font-size:.8rem; }
     .answer { white-space:pre-wrap; background:#fff; border:1px solid var(--line); border-radius:10px;
               padding:1rem 1.1rem; }
+
+    /* --- synthesis wiki: "the scholar's notebook" (authored prose, distinct from the raw library) --- */
+    :root { --wiki-accent:#9a6b3f; --wiki-paper:#fffdf9; --wiki-ink:#2b2620; }
+    .wiki-serif { font-family:Georgia,Palatino,serif; color:var(--wiki-ink); }
+    .wiki-hero { position:relative; overflow:hidden; border:1px solid var(--line); border-radius:14px;
+                 background:linear-gradient(170deg,var(--wiki-paper),#fff 70%); padding:1.5rem 1.6rem; }
+    .wiki-hero::after { content:""; position:absolute; inset:0; pointer-events:none; opacity:.55;
+                 background-image:radial-gradient(var(--line) 1px, transparent 1px); background-size:15px 15px;
+                 -webkit-mask:linear-gradient(225deg,#000,transparent 55%); mask:linear-gradient(225deg,#000,transparent 55%); }
+    .wiki-hero h1 { font-family:Georgia,Palatino,serif; font-size:1.8rem; margin:0 0 .25rem;
+                 letter-spacing:.2px; color:var(--wiki-ink); position:relative; }
+    .wiki-hero .lede { color:var(--muted); font-size:.92rem; max-width:48ch; position:relative; }
+    .wiki-stats { display:flex; gap:1.8rem; margin-top:1.1rem; position:relative; }
+    .wiki-stats b { display:block; font-family:Georgia,serif; font-size:1.5rem; line-height:1;
+                 color:var(--wiki-accent); font-variant-numeric:tabular-nums; }
+    .wiki-stats span { font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+    .type-group { margin-top:1.7rem; }
+    .type-head { font-family:Georgia,serif; font-size:.74rem; text-transform:uppercase; letter-spacing:.13em;
+                 color:var(--wiki-accent); font-weight:700; border-bottom:1px solid var(--line);
+                 padding-bottom:.3rem; margin:0 0 .7rem; }
+    .entity-list { list-style:none; padding:0; margin:0;
+                 display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:.55rem .9rem; }
+    .entity-list a { font-family:Georgia,serif; font-size:1.02rem; text-decoration:none; }
+    .entity-list a:hover { text-decoration:underline; }
+    .entity-list .meta { color:var(--muted); font-size:.72rem; font-variant-numeric:tabular-nums; }
+    .review-banner { display:inline-flex; align-items:center; gap:.45rem; margin-top:1rem;
+                 padding:.35rem .75rem; border-radius:999px; background:#fdf3e7; border:1px solid #ecd9bf;
+                 color:#8a5a2b; font-size:.82rem; text-decoration:none; }
+    .wiki-doc { background:var(--wiki-paper); border:1px solid var(--line); border-radius:14px;
+                 padding:1.7rem 2rem; box-shadow:0 1px 0 #f0ebe2; }
+    .wiki-doc .wiki-title { font-family:Georgia,Palatino,serif; font-size:1.9rem; margin:.1rem 0 .35rem;
+                 color:var(--wiki-ink); letter-spacing:.2px; }
+    .wiki-doc h2 { font-family:Georgia,serif; font-size:.82rem; text-transform:uppercase; letter-spacing:.11em;
+                 color:var(--wiki-accent); border-bottom:1px solid var(--line); padding-bottom:.25rem; margin:1.6rem 0 .7rem; }
+    .wiki-doc p { margin:.5rem 0; } .wiki-doc .wiki-meta { color:var(--muted); font-size:.83rem; margin-top:0; }
+    .wiki-doc ul.wiki-list { padding-left:0; list-style:none; }
+    .wiki-doc ul.wiki-list li { position:relative; padding-left:1.1rem; margin:.4rem 0; }
+    .wiki-doc ul.wiki-list li::before { content:"›"; position:absolute; left:0; color:var(--wiki-accent); }
+    .wiki-doc .cite { color:var(--muted); font-size:.8rem; }
+    .wiki-doc hr { border:0; border-top:1px solid var(--line); margin:1.4rem 0; }
+    .wikilink { color:var(--accent); text-decoration:none; border-bottom:1px dotted var(--accent); }
+    .wikilink:hover { background:#eef3fb; }
+    .crumb-wiki { color:var(--wiki-accent); }
   </style>
 </head>
 <body>
@@ -46,6 +89,7 @@
     <a href="/search">Search</a>
     <a href="/chat">Chat</a>
     <a href="/gallery">Gallery</a>
+    <a href="/wiki">Wiki</a>
   </nav>
   <main>{% block content %}{% endblock %}</main>
 </body>

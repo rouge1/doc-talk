@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %} · review queue{% endblock %}
+{% block content %}
+  <p class="crumb"><a href="/wiki" class="crumb-wiki">Wiki</a> / review queue</p>
+  <h1 class="wiki-serif">Resolution review</h1>
+  <p class="muted">Ambiguous mentions the resolver deferred — neither a confident match nor clearly
+    new. Each is provisionally its own page until a human (or a <code>doctalk wiki-merge</code>) settles it.</p>
+
+  {% if rows %}
+    {% for r in rows %}
+      <div class="card">
+        <strong>{{ r.surface }}</strong> <span class="muted">({{ r.type }})</span>
+        <div class="muted">llm verdict: {{ r.llm or "—" }}
+          {% if r.entity_id %}· provisional entity #{{ r.entity_id }}{% endif %}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Nothing to review — resolution is clean. ✓</p>
+  {% endif %}
+{% endblock %}

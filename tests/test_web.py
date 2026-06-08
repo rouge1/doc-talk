@@ -17,6 +17,26 @@ def client(db):
     return TestClient(app)
 
 
+def _seed_wiki_entity(name="Cake", norm="cake", type_="product"):
+    from doctalk.db import repo
+    from doctalk.db.session import session_scope
+    from doctalk.synth import wikirepo
+
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="a" * 64, path="/a", filename="a.pdf",
+                         format="pdf", mime="x", byte_size=1)
+        s.flush()
+        fid = repo.get_file_id(s, "a" * 64)
+        e = repo.create_entity(s, name=name, type_=type_, norm_key=norm)
+        e.source_count = 1
+        e.wiki_path = f"entities/{norm}.md"
+        claim = repo.insert_claim(s, entity_id=e.id, file_id=fid, text="Bake 30 min.")
+        repo.insert_claim_sources(s, claim.id, [{"file_id": fid, "chunk_id": None}])
+        repo.upsert_wiki_page(s, path=f"entities/{norm}.md", title=name, kind="entity", entity_id=e.id,
+                              source_count=1)
+    wikirepo.write_page(f"entities/{norm}.md", f"# {name}\n\n> **{type_}** · 1 source(s)\n\n## Claims\n\n- Bake 30 min.\n")
+
+
 def test_index_renders(client):
     r = client.get("/")
     assert r.status_code == 200
@@ -54,3 +74,31 @@ def test_missing_figure_is_404(client):
 
 def test_missing_image_is_404(client):
     assert client.get("/image/999999").status_code == 404
+
+
+def test_wiki_index_renders_empty(client):
+    r = client.get("/wiki")
+    assert r.status_code == 200 and "synthesis wiki" in r.text
+
+
+def test_wiki_index_lists_entities_and_page_renders(client):
+    _seed_wiki_entity()
+    r = client.get("/wiki")
+    assert r.status_code == 200 and "Cake" in r.text and "product" in r.text
+    page = client.get("/wiki/page/cake")
+    assert page.status_code == 200
+    assert 'class="wiki-title">Cake</h1>' in page.text and "Bake 30 min." in page.text
+
+
+def test_wiki_page_missing_is_404(client):
+    assert client.get("/wiki/page/nonexistent").status_code == 404
+
+
+def test_wiki_page_rejects_non_slug_targets(client):
+    # uppercase/underscore are not slug chars -> 404 before any filesystem touch (traversal guard)
+    assert client.get("/wiki/page/Bad_Name").status_code == 404
+
+
+def test_wiki_review_renders(client):
+    r = client.get("/wiki/review")
+    assert r.status_code == 200 and "Resolution review" in r.text

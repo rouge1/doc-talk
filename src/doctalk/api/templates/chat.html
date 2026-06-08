@@ -12,7 +12,10 @@
     {% if result.wiki_citations %}
       <h2>From the wiki</h2>
       {% for w in result.wiki_citations %}
-        <div class="muted">• {{ w.name }} <span class="muted">({{ w.type }})</span></div>
+        {% set stem = w.path.rsplit('/', 1)[-1][:-3] if w.path else '' %}
+        <div class="muted">•
+          {% if stem %}<a href="/wiki/page/{{ stem }}">{{ w.name }}</a>{% else %}{{ w.name }}{% endif %}
+          <span class="muted">({{ w.type }})</span></div>
       {% endfor %}
     {% endif %}
     {% if result.citations %}
