@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
+import Plate from "../components/Plate";
 
 const callno = (i: number) => `№ ${String(i + 1).padStart(3, "0")}`;
 
@@ -10,16 +11,19 @@ export default function Library() {
 
   return (
     <div className="rise">
-      <section className="hero">
-        <div className="kicker">Local knowledge archive</div>
-        <h1 className="display">Everything you dropped,<br />read and reasoned about.</h1>
-        <p>
-          doctalk ingests your documents and photographs, then compiles them into a navigable,
-          source-traced wiki you can search, question, and browse.
-        </p>
-        <div className="filing mono">
-          EST. LOCAL<br />NO CLOUD · NO LEAKS
+      <section className="hero hero-grid">
+        <div>
+          <div className="kicker">Local knowledge archive</div>
+          <h1 className="display">Everything you dropped,<br />read and reasoned about.</h1>
+          <p>
+            doctalk ingests your documents and photographs, then compiles them into a navigable,
+            source-traced wiki you can search, question, and browse.
+          </p>
         </div>
+        <Plate
+          serial={`№ ${String(stats.data?.documents ?? 0).padStart(3, "0")}`}
+          lines={["Local archive", "On-device", "No cloud · no leaks"]}
+        />
       </section>
 
       {stats.data && (
@@ -45,15 +49,15 @@ export default function Library() {
 
       <div className="catalog">
         {lib.data?.documents.map((d, i) => (
-          <a key={d.hash} className="entry rise" style={{ animationDelay: `${i * 40}ms` }}
-             href={`http://127.0.0.1:8000/doc/${d.hash}`}>
+          <Link key={d.hash} className="entry rise" style={{ animationDelay: `${i * 40}ms` }}
+                to={`/doc/${d.hash}`}>
             <span className="callno">{callno(i)}</span>
             <span>
               <div className="title">{d.name}</div>
               <div className="sub">{d.format}</div>
             </span>
             <span className="meta">{d.chapters} ch · {d.chunks} chunks</span>
-          </a>
+          </Link>
         ))}
       </div>
 

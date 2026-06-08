@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
+import Plate from "../components/Plate";
 
 export default function Wiki() {
   const { data, error, loading } = useFetch(api.wiki, "wiki");
@@ -10,13 +11,19 @@ export default function Wiki() {
 
   return (
     <div className="rise">
-      <section className="hero">
-        <div className="kicker">The synthesis layer</div>
-        <h1 className="display">The wiki</h1>
-        <p>
-          Entities and claims distilled from your documents — interlinked, deduplicated across
-          sources, and traced back to the exact passage they came from.
-        </p>
+      <section className="hero hero-grid">
+        <div>
+          <div className="kicker">The synthesis layer</div>
+          <h1 className="display">The wiki</h1>
+          <p>
+            Entities and claims distilled from your documents — interlinked, deduplicated across
+            sources, and traced back to the exact passage they came from.
+          </p>
+        </div>
+        <Plate
+          serial={`№ ${String(data.totals.entities).padStart(3, "0")}`}
+          lines={["Authored", "Source-traced", "Compounding"]}
+        />
       </section>
 
       <div className="ledger">

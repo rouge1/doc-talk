@@ -35,9 +35,9 @@ def test_format_citations_numbers_from_one():
     cites = format_citations(hits)
     assert cites == [
         {"n": 1, "file": "a.pdf", "chapter": "Ch 1", "page": 5,
-         "content_hash": None, "chapter_id": None},
+         "content_hash": None, "chapter_id": None, "chunk_id": None},
         {"n": 2, "file": "a.pdf", "chapter": "Ch 2", "page": 9,
-         "content_hash": None, "chapter_id": None},
+         "content_hash": None, "chapter_id": None, "chunk_id": None},
     ]
 
 

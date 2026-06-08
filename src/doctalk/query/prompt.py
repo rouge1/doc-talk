@@ -45,6 +45,7 @@ def format_citations(hits: list[Any]) -> list[dict[str, Any]]:
             "page": h.page,
             "content_hash": getattr(h, "content_hash", None),
             "chapter_id": getattr(h, "chapter_id", None),
+            "chunk_id": getattr(h, "chunk_id", None),
         }
         for i, h in enumerate(hits, start=1)
     ]
