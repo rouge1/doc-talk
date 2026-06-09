@@ -34,8 +34,19 @@ def answer(
     from doctalk.models.chat import chat as ollama_chat
 
     text = ollama_chat(build_wiki_messages(question, pages, chunks))
+
+    # Presenter pass: typeset the raw draft into a clean dispatch (best-effort; raw on failure).
+    formatted = text
+    from doctalk.config import get_settings
+
+    if get_settings().chat_format:
+        from doctalk.query.format import format_answer
+
+        formatted = format_answer(question, text)
+
     result: dict[str, Any] = {
         "answer": text,
+        "formatted": formatted,
         "wiki_citations": format_wiki_citations(pages),
         "citations": format_citations(chunks),
         "pages": pages,

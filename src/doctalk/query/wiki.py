@@ -54,23 +54,51 @@ def _claim_sources(session, claim_id: int) -> list[str]:
     return sorted(out)
 
 
+def _page_doc(hit: PageHit, max_claims: int = 8) -> str:
+    """The text a reranker scores against the question: the entity name + its claims."""
+    return f"{hit.name}. " + " ".join(c.text for c in hit.claims[:max_claims])
+
+
+def _rerank_pages(question: str, hits: list[PageHit], k: int) -> list[PageHit]:
+    """Reorder candidate pages by a cross-encoder against the question, keep the top-k.
+
+    The bi-encoder name+definition vector centers on literal token overlap (a query for "control
+    channels" pulls in every entity whose name contains "channel", plus vague pages like "Bluetooth
+    system"). A cross-encoder reads the page's actual claims jointly with the question, so it promotes
+    the genuinely relevant pages (e.g. "L2CAP channels") and demotes the peripheral ones. Mirrors the
+    chunk retriever's rerank pass; degrades to bi-encoder order if the model is unavailable.
+    """
+    from doctalk.models import rerank as rr
+
+    try:
+        scores = rr.rerank(question, [_page_doc(h) for h in hits])
+    except Exception:  # noqa: BLE001 - no reranker model: fall back to ANN order
+        return hits[:k]
+    return [h for h, _ in sorted(zip(hits, scores), key=lambda hs: hs[1], reverse=True)][:k]
+
+
 def retrieve_pages(question: str, k: int = 6, *, min_score: float | None = None) -> list[PageHit]:
     """Top-k active entity pages for the question, each with its claims + provenance.
 
     Pages below ``min_score`` (cosine name+definition relevance; default ``wiki_page_min_score``) are
     dropped so an off-topic wiki — e.g. only recipe entities — doesn't get cited for a question about
-    something else just because those are the only pages that exist. Falls back to ``settings``.
+    something else just because those are the only pages that exist. The survivors are then reordered
+    by a cross-encoder (``_rerank_pages``) for relevance centering. Falls back to ``settings``.
     """
     qv = _embed_query(question)
     if qv is None:
         return []
-    if min_score is None:
-        from doctalk.config import get_settings
+    from doctalk.config import get_settings
 
-        min_score = get_settings().wiki_page_min_score
+    settings = get_settings()
+    if min_score is None:
+        min_score = settings.wiki_page_min_score
+    use_rerank = settings.rerank_enabled
     from doctalk.vector import store
 
-    raw = store.search_entity_names(qv, k * 3)  # over-fetch; we drop inactive / claimless / off-topic
+    # Over-fetch a candidate pool (wide when reranking) and gate off-topic pages by cosine first.
+    fetch_k = max(k, settings.rerank_candidates) if use_rerank else k * 3
+    raw = store.search_entity_names(qv, fetch_k)
     hits: list[PageHit] = []
     with session_scope() as session:
         for row in raw:
@@ -93,6 +121,8 @@ def retrieve_pages(question: str, k: int = 6, *, min_score: float | None = None)
                     claims=[PageClaim(c.text, _claim_sources(session, c.id)) for c in claims],
                 )
             )
-            if len(hits) >= k:
+            if not use_rerank and len(hits) >= k:
                 break
-    return hits
+    if use_rerank and hits:
+        return _rerank_pages(question, hits, k)
+    return hits[:k]

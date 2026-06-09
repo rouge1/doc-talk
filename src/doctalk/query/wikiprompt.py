@@ -13,7 +13,11 @@ WIKI_SYSTEM = (
     "(curated wiki claims, each with its source) and SUPPORTING EXCERPTS (raw document snippets, "
     "numbered [n]). Prefer the synthesized knowledge; use the excerpts to fill gaps. Cite entities "
     "by name and excerpts inline as [n]. If the material does not contain the answer, say you don't "
-    "find it in the corpus — do not use outside knowledge or invent details."
+    "find it in the corpus — do not use outside knowledge or invent details. "
+    "Do not expand an acronym unless its expansion appears verbatim in the material, and do not state "
+    "any number, channel index, or count that is not written in the material — if a specific is not "
+    "given, say so rather than guessing. Apply these rules silently: never narrate them or explain "
+    "what you are choosing not to expand; just write the answer."
 )
 
 
@@ -39,7 +43,8 @@ def build_wiki_messages(question: str, pages: list[Any], chunks: list[Any]) -> l
         f"Question: {question}\n\n"
         + "\n\n".join(sections)
         + "\n\nAnswer using only the material above, preferring the synthesized knowledge. "
-        "Cite entities by name and excerpts as [n]. If it isn't covered, say so."
+        "Cite a supporting excerpt as [n] — single square brackets, number only (e.g. [1]); name "
+        "wiki entities in plain prose. If it isn't covered, say so."
     )
     return [
         {"role": "system", "content": WIKI_SYSTEM},

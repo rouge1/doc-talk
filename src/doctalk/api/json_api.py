@@ -229,7 +229,7 @@ def chat(q: str = "") -> dict:
     res = answer(q, k_chunks=6)
     return {
         "query": q,
-        "answer": res["answer"],
+        "answer": res.get("formatted") or res["answer"],  # the typeset dispatch (presenter pass)
         "wiki_citations": [
             {"name": w["name"], "type": w["type"], "stem": _stem(w.get("path"))}
             for w in res["wiki_citations"]

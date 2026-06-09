@@ -63,6 +63,9 @@ def test_retrieve_pages_filters_to_active_with_claims(db, monkeypatch):
         gone = repo.create_entity(s, name="Old", type_="concept", norm_key="old", status="merged_into")
         order = [good.id, empty.id, gone.id]
 
+    monkeypatch.setenv("DOCTALK_RERANK_ENABLED", "false")  # this test targets gating, not rerank order
+    from doctalk.config import get_settings
+    get_settings.cache_clear()
     monkeypatch.setattr(wiki, "_embed_query", lambda q: [1.0, 0.0])
     from doctalk.vector import store
     monkeypatch.setattr(
@@ -96,6 +99,9 @@ def test_retrieve_pages_gates_off_topic_pages(db, monkeypatch):
             repo.insert_claim_sources(s, c.id, [{"file_id": fid, "chunk_id": cid}])
         ids = {"near": near.id, "far": far.id}
 
+    monkeypatch.setenv("DOCTALK_RERANK_ENABLED", "false")  # gate happens pre-rerank; keep order simple
+    from doctalk.config import get_settings
+    get_settings.cache_clear()
     monkeypatch.setattr(wiki, "_embed_query", lambda q: [1.0, 0.0])
     from doctalk.vector import store
     # near page: distance 0.5 -> score 0.5 (relevant); far page: distance 0.92 -> score 0.08 (off-topic)
@@ -109,6 +115,39 @@ def test_retrieve_pages_gates_off_topic_pages(db, monkeypatch):
     assert [h.name for h in hits] == ["On"]                # the 0.08 page is gated out
     # an explicit looser gate lets the off-topic page back in
     assert {h.name for h in wiki.retrieve_pages("q", k=6, min_score=0.0)} == {"On", "Salt"}
+
+
+def test_retrieve_pages_reranks_relevant_above_bi_encoder_order(db, monkeypatch):
+    # The bi-encoder ranks a vague name-match first; the cross-encoder should promote the page whose
+    # CLAIMS actually answer the question, then we keep the top-k by that.
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="a" * 64, path="/a", filename="a.pdf",
+                         format="pdf", mime="x", byte_size=1)
+        s.flush()
+        fid = repo.get_file_id(s, "a" * 64)
+        ch = repo.insert_chapters(s, fid, [{"level": 1, "ord": 0, "title": "S", "page_start": 1,
+                                            "page_end": 1, "source": "outline", "parent_ord": None}])[0]
+        repo.insert_chunks(s, fid, [{"chapter_id": ch.id, "page": 1, "ord": 0,
+                                     "char_count": 4, "text": "x"}])
+        cid = repo.get_chunks(s, fid)[0].id
+        vague = repo.create_entity(s, name="Channel System", type_="concept", norm_key="channel system")
+        real = repo.create_entity(s, name="L2CAP channels", type_="component", norm_key="l2cap channels")
+        for e, txt in ((vague, "A general system."), (real, "Carries L2CAP control signaling.")):
+            c = repo.insert_claim(s, entity_id=e.id, file_id=fid, text=txt)
+            repo.insert_claim_sources(s, c.id, [{"file_id": fid, "chunk_id": cid}])
+        order = [vague.id, real.id]   # bi-encoder puts the vague name-match first
+
+    monkeypatch.setattr(wiki, "_embed_query", lambda q: [1.0, 0.0])
+    from doctalk.vector import store
+    monkeypatch.setattr(store, "search_entity_names",
+                        lambda qv, k, type_=None: [{"entity_id": e, "_distance": 0.2} for e in order])
+    # Stub the cross-encoder: score by whether the page doc mentions "control signaling".
+    import doctalk.models.rerank as rrmod
+    monkeypatch.setattr(rrmod, "rerank",
+                        lambda q, docs: [2.0 if "control signaling" in d else -1.0 for d in docs])
+
+    hits = wiki.retrieve_pages("what are the control channels", k=2)
+    assert [h.name for h in hits] == ["L2CAP channels", "Channel System"]  # reranked, not ANN order
 
 
 # --- orchestrator + promote ------------------------------------------------
@@ -139,3 +178,44 @@ def test_wikichat_empty_corpus_is_graceful(db, monkeypatch):
     monkeypatch.setattr(wikichat, "retrieve", lambda q, k=6, file_id=None: [])
     res = wikichat.answer("anything?")
     assert "don't find" in res["answer"] and res["citations"] == []
+
+
+# --- presenter / formatter agent -------------------------------------------
+
+
+def test_format_answer_typesets_via_llm(monkeypatch):
+    import doctalk.models.chat as chatmod
+    from doctalk.query.format import format_answer
+    seen = {}
+    def fake(messages, **kw):
+        seen["sys"] = messages[0]["content"]
+        return "> BLE advertises on channels 37, 38, 39 [1].\n\n- Default is 0x07 [1]."
+    monkeypatch.setattr(chatmod, "chat", fake)
+    out = format_answer("what advertising channels?", "ble uses 37 38 39 [1]. default 0x07 [1]")
+    assert out.startswith("> ") and "[1]" in out          # standfirst + preserved citation
+    assert "STANDFIRST" in seen["sys"]                     # the presenter instruction was used
+
+
+def test_format_answer_falls_back_to_draft(monkeypatch):
+    import doctalk.models.chat as chatmod
+    from doctalk.query.format import format_answer
+    assert format_answer("q", "") == ""                    # empty draft -> unchanged, no LLM call
+    monkeypatch.setattr(chatmod, "chat", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert format_answer("q", "raw draft [1]") == "raw draft [1]"  # LLM failure -> raw draft survives
+
+
+def test_wikichat_answer_carries_formatted(db, monkeypatch):
+    monkeypatch.setattr(wikichat, "retrieve_pages", lambda q, k=6: [_page()])
+    monkeypatch.setattr(wikichat, "retrieve", lambda q, k=6, file_id=None: [])
+    import doctalk.models.chat as chatmod
+    calls = []
+    def fake(messages, **kw):
+        calls.append(messages[0]["content"])
+        # answering pass returns the raw draft; the presenter pass returns the typeset dispatch
+        return "> Bake 30 min.\n\n- Bake at 350F [1]." if "typesetting" in messages[0]["content"] \
+            else "Bake for 30 minutes [1]."
+    monkeypatch.setattr(chatmod, "chat", fake)
+    res = wikichat.answer("how long to bake?")
+    assert res["answer"] == "Bake for 30 minutes [1]."     # raw draft preserved
+    assert res["formatted"].startswith("> ")               # presenter dispatch
+    assert any("typesetting" in c for c in calls)          # the formatter pass ran

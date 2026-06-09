@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     # Wiki-first chat gates authored pages on cosine relevance so off-topic pages (e.g. the recipe
     # entities for a Bluetooth question) aren't cited just because they're the only pages that exist.
     wiki_page_min_score: float = 0.30  # min name+definition cosine to surface a wiki page
+    # A second "presenter" LLM pass typesets the raw answer into a clean dispatch (query.format).
+    # Off by default in tests/headless; the API turns it on. Doubles answer latency, so the SPA
+    # caches results client-side.
+    chat_format: bool = True
 
     # --- Entity resolution (synth_resolve; see docs/entity-resolution.md) ---
     # Two-threshold band over a [0,1] score: confident MATCH only when high AND well-separated from
