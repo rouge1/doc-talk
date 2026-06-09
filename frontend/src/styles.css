@@ -243,12 +243,61 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 /* ask / chat */
 .thinking { padding: 1rem 0; }
 .q-echo { font-size: .9rem; color: var(--ink); margin-bottom: .6rem; }
-.dispatch { }
-.answer-body {
-  font-family: var(--serif); font-size: 1.25rem; line-height: 1.65; color: var(--ink);
-  white-space: pre-wrap; margin: .4rem 0 0;
+/* Critical-edition layout: the answer as the body text, its apparatus (wiki + sources) in a margin
+   rail — using the canvas instead of leaving the right half empty. Stacks on narrow viewports. */
+.dispatch {
+  margin-top: .4rem; display: grid; gap: 2.6rem;
+  grid-template-columns: minmax(0, 43rem) 16rem; align-items: start;
+}
+@media (max-width: 900px) { .dispatch { grid-template-columns: 1fr; gap: 1.4rem; } }
+.dispatch-aside { position: sticky; top: 1.2rem; display: flex; flex-direction: column; gap: 1.6rem; }
+.apparatus { }
+
+/* The answer, set as a reference dispatch: serif measure, ruled mono subheads, archival markers. */
+.answer-prose {
+  font-family: var(--serif); font-size: 1.12rem; line-height: 1.72; color: var(--ink);
+  margin: .5rem 0 0; padding-left: 1.4rem; border-left: 2px solid var(--rule);
+}
+.answer-prose > :first-child { margin-top: 0; }
+.answer-prose p { margin: 0 0 1rem; }
+.answer-prose > p:first-of-type:not(.md-head) {   /* lead paragraph (fallback when no dek) */
+  font-size: 1.24rem; line-height: 1.6;
+}
+.answer-prose .dek {                              /* the presenter's standfirst: the direct answer */
+  font-family: var(--serif); font-style: normal; font-size: 1.4rem; line-height: 1.46;
+  color: var(--ink); margin: 0 0 1.3rem; padding: 0; border: 0;
+}
+.answer-prose .dek::first-letter {                /* an illuminated initial — reference-edition flourish */
+  float: left; font-weight: 600; color: var(--ochre);
+  font-size: 3.1rem; line-height: .82; padding: .12rem .5rem 0 0;
+}
+.answer-prose .md-head {                          /* ## subheads -> mono ruled catalog labels */
+  font-family: var(--mono); text-transform: uppercase; color: var(--ochre); font-weight: 600;
+  letter-spacing: .12em; line-height: 1.35; margin: 1.9rem 0 .7rem; padding-top: .6rem;
+  border-top: 1px solid var(--rule-2);
+}
+.answer-prose .md-h1 { font-size: .82rem; }
+.answer-prose .md-h2 { font-size: .76rem; }
+.answer-prose .md-h3 { font-size: .72rem; color: var(--ink-soft); }
+.answer-prose strong { font-weight: 600; color: var(--ink); }
+.answer-prose em { font-style: italic; }
+.answer-prose .md-code {
+  font-family: var(--mono); font-size: .82em; background: var(--paper-2);
+  border: 1px solid var(--rule-2); border-radius: 3px; padding: .04em .34em; color: var(--oxblood);
+}
+.answer-prose ul.md-list { list-style: none; margin: 0 0 1rem; padding-left: 0; }
+.answer-prose ul.md-list > li { position: relative; padding-left: 1.3rem; margin: 0 0 .5rem; }
+.answer-prose ul.md-list > li::before {
+  content: "▪"; position: absolute; left: .1rem; top: -.02em; color: var(--ochre); font-size: .8em;
+}
+.answer-prose ol.md-list { margin: 0 0 1rem; padding-left: 1.7rem; }
+.answer-prose ol.md-list > li { margin: 0 0 .5rem; padding-left: .2rem; }
+.answer-prose ol.md-list > li::marker {
+  font-family: var(--mono); font-size: .82em; color: var(--ochre); font-variant-numeric: tabular-nums;
 }
 .cite-cards { display: flex; flex-wrap: wrap; gap: .6rem; }
+.dispatch-aside .cite-cards { flex-direction: column; gap: .5rem; }
+.dispatch-aside .cite-card { width: 100%; min-width: 0; }
 .cite-card {
   display: flex; flex-direction: column; gap: .15rem; min-width: 130px;
   padding: .6rem .85rem; background: var(--card); border: 1px solid var(--rule);
@@ -256,17 +305,24 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
   transition: border-color .15s, transform .15s;
 }
 .cite-card:hover { border-color: var(--ochre); transform: translateY(-2px); }
-.cite-card .cc-name { font-family: var(--serif); font-size: 1.05rem; }
+.cite-card .cc-name {
+  font-family: var(--serif); font-size: 1.05rem;
+  /* Long entity names (e.g. Primary_Advertising_Channel_Map) have no natural break point — without
+     this the underscored token overflows the card edge. Break it anywhere it must. */
+  overflow-wrap: anywhere; word-break: break-word; hyphens: auto;
+}
 .cite-card .cc-type { font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
 .sources { margin: 0; padding-left: 1.4rem; font-family: var(--mono); font-size: .78rem; line-height: 1.9; }
 .sources a { color: var(--ink-soft); }
 .sources a:hover { color: var(--ochre); }
 
-.cite-mark {
-  font-family: var(--mono); font-size: .72em; color: var(--oxblood); text-decoration: none;
-  padding: 0 .1em; border-radius: 2px; vertical-align: .15em;
+.cite-mark {   /* footnote-style superscript numeral woven into the prose */
+  font-family: var(--mono); font-size: .64em; font-weight: 600; color: var(--oxblood);
+  text-decoration: none; vertical-align: super; line-height: 0; padding: 0 .12em;
 }
-.cite-mark:hover { background: #f6e6d9; }
+.cite-mark:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Separate stacked citations ([1][2]) so the superscripts don't fuse into one number ("12"). */
+.cite-mark + .cite-mark::before { content: ","; color: var(--ink-soft); margin: 0 .04em 0 -.02em; }
 
 /* ---- document reader (outline + the leaf) ------------------------------ */
 .outline { list-style: none; padding: 0; margin: .4rem 0 0; }
