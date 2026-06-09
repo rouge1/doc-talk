@@ -140,16 +140,18 @@ def wiki() -> dict:
 
 
 @router.get("/search")
-def search(q: str = "", k: int = 8) -> dict:
-    """Hybrid retrieval (ANN + cross-encoder rerank) over the chunk index. Loads models lazily."""
+def search(q: str = "", k: int = 8, mode: str = "hybrid") -> dict:
+    """Search the chunk index. ``mode='simple'`` is lexical keyword search; ``mode='hybrid'`` fuses
+    the lexical and dense (ANN) arms with RRF then cross-encoder reranks. Loads models lazily."""
     q = q.strip()
     if not q:
-        return {"query": "", "hits": []}
-    from doctalk.query.retriever import retrieve
+        return {"query": "", "hits": [], "mode": mode}
+    from doctalk.query.retriever import hybrid_search, keyword_search
 
-    hits = retrieve(q, k=k)
+    hits = keyword_search(q, k=k) if mode == "simple" else hybrid_search(q, k=k)
     return {
         "query": q,
+        "mode": mode,
         "hits": [
             {
                 "chunk_id": h.chunk_id,
@@ -161,6 +163,7 @@ def search(q: str = "", k: int = 8) -> dict:
                 "rerank_score": h.rerank_score,
                 "content_hash": h.content_hash,
                 "chapter_id": h.chapter_id,
+                "source": h.source,
             }
             for h in hits
         ],
@@ -452,17 +455,13 @@ def doc_page_png(content_hash: str, page: int, zoom: float = 2.0) -> Response:
 _MARGIN_BAND = 0.09
 
 
-def _highlight_rects(pg, text: str, w: float, h: float) -> list[dict]:
-    """Locate a chunk's words on a page, line by line, so the highlight follows the section even
-    onto the next page when it spills across a page break (a full-text search only matches the page
-    that holds the whole passage). Short lines and running-header/footer bands are skipped; dedup."""
+def _rects_for(pg, needles: list[str], w: float, h: float) -> list[dict]:
+    """Search the page for each needle and return normalized rects, skipping header/footer bands and
+    de-duplicating. Shared by chunk-line highlighting and query-term highlighting."""
     rects: list[dict] = []
     seen: set[tuple] = set()
-    for line in text.split("\n"):
-        line = line.strip()
-        if len(line) < 8:
-            continue
-        for r in pg.search_for(line):
+    for needle in needles:
+        for r in pg.search_for(needle):
             cy = (r.y0 + r.y1) / 2 / h
             if cy < _MARGIN_BAND or cy > 1 - _MARGIN_BAND:  # running header / footer
                 continue
@@ -474,17 +473,42 @@ def _highlight_rects(pg, text: str, w: float, h: float) -> list[dict]:
     return rects
 
 
+def _anchor_rects(pg, text: str, w: float, h: float) -> list[dict]:
+    """Anchor a cited chunk: highlight just its opening line(s), not every line. A chunk is a big
+    retrieval unit (~40 lines ≈ a whole page), so highlighting all of it floods the page and gives no
+    focal point. Highlighting the start marks *where* the cited passage begins; the viewer scrolls to
+    it and the reader continues from there. Up to the first two substantial lines are anchored."""
+    anchor: list[str] = []
+    for ln in text.split("\n"):
+        ln = ln.strip()
+        if len(ln) >= 8:
+            anchor.append(ln)
+        if len(anchor) == 2:
+            break
+    return _rects_for(pg, anchor, w, h)
+
+
+def _query_rects(pg, query: str, w: float, h: float) -> list[dict]:
+    """Highlight what a *search* matched: the query's phrase(s) and content word(s), not the whole
+    chunk — so clicking a result lights up the words you searched, where they appear on the page."""
+    from doctalk.query.retriever import _parse_query
+
+    phrases, words = _parse_query(query)
+    needles = phrases + [w_ for w_ in words if len(w_) >= 2]  # drop 1-char tokens (e.g. "6.0" -> 6/0)
+    return _rects_for(pg, needles, w, h)
+
+
 @router.get("/doc/{content_hash}/page/{page}")
-def doc_page(content_hash: str, page: int, chunk_id: int | None = None) -> dict:
-    """Page metadata for the viewer: dimensions, page count, and (for a search/citation chunk) the
-    highlight rectangles of the matched words — normalized to 0..1 so the client scales them to the
-    rendered image. The match is per-line, so carrying the chunk across page nav keeps a spanning
-    section highlighted."""
+def doc_page(content_hash: str, page: int, chunk_id: int | None = None, q: str = "") -> dict:
+    """Page metadata for the viewer: dimensions, page count, and highlight rectangles (normalized to
+    0..1 for the client). ``q`` highlights a *search query*'s terms (clicking a search hit lights up
+    what you searched); ``chunk_id`` highlights a whole cited chunk (Ask citations show the source
+    passage). ``q`` takes precedence. Both are carried across page nav so the highlight persists."""
     import fitz
 
     path, _ = _render_pdf_path(content_hash)
     chunk_text = None
-    if chunk_id is not None:
+    if not q and chunk_id is not None:
         with session_scope() as s:
             chunk = s.get(Chunk, chunk_id)
             chunk_text = chunk.text if chunk is not None else None
@@ -493,7 +517,12 @@ def doc_page(content_hash: str, page: int, chunk_id: int | None = None) -> dict:
             raise HTTPException(status_code=404, detail="page out of range")
         pg = doc[page - 1]
         w, h = pg.rect.width, pg.rect.height
-        rects = _highlight_rects(pg, chunk_text, w, h) if chunk_text else []
+        if q:
+            rects = _query_rects(pg, q, w, h)
+        elif chunk_text:
+            rects = _anchor_rects(pg, chunk_text, w, h)
+        else:
+            rects = []
         page_count = doc.page_count
     with session_scope() as s:
         f = repo.get_file(s, content_hash)

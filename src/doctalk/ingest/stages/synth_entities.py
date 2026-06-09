@@ -18,7 +18,6 @@ source counts — a re-drop or model upgrade re-synthesizes cleanly.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from doctalk.config import get_settings
@@ -26,20 +25,9 @@ from doctalk.db import repo
 from doctalk.ingest.dag import StageContext
 from doctalk.synth import extract, resolve
 from doctalk.synth.normalize import norm_key
+from doctalk.textfilter import is_noise_chunk as _is_noise_chunk  # shared with the search retriever
 
-# A table-of-contents / index line trails off in dotted leaders to a page number ("Foo ..... 412").
-# Chunks dominated by these carry no extractable knowledge — only navigation filler.
-_LEADER_LINE = re.compile(r"\.{4,}\s*\d*\s*$")
 _MAX_PROV_CHUNKS = 25  # cap provenance breadth per entity (a spec-wide term needn't cite 100 chunks)
-
-
-def _is_noise_chunk(text: str) -> bool:
-    """True for table-of-contents / index chunks (mostly dotted-leader page references)."""
-    lines = [ln for ln in text.splitlines() if ln.strip()]
-    if len(lines) < 4:
-        return False
-    leaders = sum(1 for ln in lines if _LEADER_LINE.search(ln))
-    return leaders / len(lines) >= 0.3
 
 
 def _sample_chunks(chunks: list, limit: int) -> list:

@@ -63,17 +63,29 @@ def test_entity_not_found_and_bad_slug(client):
     assert client.get("/api/wiki/entity/Bad_Slug").status_code == 404
 
 
-def test_search_empty_and_results(client, monkeypatch):
-    assert client.get("/api/search").json() == {"query": "", "hits": []}
+def test_search_empty_and_modes(client, monkeypatch):
+    assert client.get("/api/search").json() == {"query": "", "hits": [], "mode": "hybrid"}
 
     from types import SimpleNamespace
     import doctalk.query.retriever as retr
-    hit = SimpleNamespace(chunk_id=42, file="a.pdf", chapter="Sec", page=3, text="bake the cake",
-                          score=0.81, rerank_score=0.93, content_hash="abc", chapter_id=5)
-    monkeypatch.setattr(retr, "retrieve", lambda q, k=8: [hit])
+    hyb = SimpleNamespace(chunk_id=42, file="a.pdf", chapter="Sec", page=3, text="bake the cake",
+                          score=0.81, rerank_score=0.93, content_hash="abc", chapter_id=5,
+                          source="semantic")
+    kw = SimpleNamespace(chunk_id=7, file="a.pdf", chapter="Sec", page=1, text="cake cake",
+                         score=1.0, rerank_score=None, content_hash="abc", chapter_id=5,
+                         source="keyword")
+    monkeypatch.setattr(retr, "hybrid_search", lambda q, k=8: [hyb])
+    monkeypatch.setattr(retr, "keyword_search", lambda q, k=8: [kw])
+
+    # default mode is hybrid; provenance flows through
     data = client.get("/api/search?q=cake").json()
-    assert data["query"] == "cake" and len(data["hits"]) == 1
-    assert data["hits"][0]["rerank_score"] == 0.93 and data["hits"][0]["chunk_id"] == 42
+    assert data["mode"] == "hybrid" and data["hits"][0]["chunk_id"] == 42
+    assert data["hits"][0]["source"] == "semantic"
+
+    # simple mode routes to the lexical arm
+    simple = client.get("/api/search?q=cake&mode=simple").json()
+    assert simple["mode"] == "simple" and simple["hits"][0]["chunk_id"] == 7
+    assert simple["hits"][0]["source"] == "keyword"
 
 
 def test_doc_outline_and_chapter_reader(client):
@@ -129,6 +141,12 @@ def test_pdf_page_render_and_highlight_rects(client, tmp_path):
     assert png.content[:8] == b"\x89PNG\r\n\x1a\n"        # real PNG bytes
 
     assert client.get(f"/api/doc/{'p' * 64}/page/99").status_code == 404   # out of range
+
+    # ?q highlights only the query term (a search click) — here just the word "highlighted"
+    q_hl = client.get(f"/api/doc/{'p' * 64}/page/1?q=highlighted").json()
+    assert len(q_hl["rects"]) == 1
+    # a term absent from the page yields no highlight (no spurious rects)
+    assert client.get(f"/api/doc/{'p' * 64}/page/1?q=nonexistentword").json()["rects"] == []
 
 
 def test_page_view_rejects_missing_or_unknown(client):
