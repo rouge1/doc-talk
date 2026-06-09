@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     # signature "authored prose"). Best-effort + bounded to entities with >=2 claims to cap LLM
     # calls; the page is valid (claims + provenance + links) even when this is off or the LLM fails.
     synth_summaries: bool = True
+    # After each ingest, the LLM revises overview.md (previous text is an input — the "evolving
+    # thesis"; see synth.overview). Best-effort: a missing model leaves the page untouched.
+    synth_overview: bool = True
     # Wiki-first chat gates authored pages on cosine relevance so off-topic pages (e.g. the recipe
     # entities for a Bluetooth question) aren't cited just because they're the only pages that exist.
     wiki_page_min_score: float = 0.30  # min name+definition cosine to surface a wiki page

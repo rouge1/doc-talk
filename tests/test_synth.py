@@ -75,6 +75,17 @@ def test_parse_entities_returns_empty_on_garbage():
     assert parse_entities("not json at all") == []
 
 
+def test_parse_entities_wraps_bare_string_claims():
+    # Found live: the model returned "claims" as one string; iterating it exploded the claim into
+    # per-character rows ("S","A","L","T",…) that polluted the salt entity page.
+    raw = ('{"entities": [{"name": "SALT", "type": "concept", '
+           '"claims": "SALT is the 128-bit value.", "aliases": "the salt"}]}')
+    ents = parse_entities(raw)
+    assert len(ents) == 1
+    assert ents[0].claims == ["SALT is the 128-bit value."]
+    assert ents[0].aliases == ["the salt"]
+
+
 def test_parse_entities_gates_data_values():
     # A sloppy model emits hex literals as entities — the gate drops them at the parse boundary.
     raw = ('{"entities": [{"name": "0x0009", "type": "concept", "claims": ["A PSM value."]},'

@@ -2,9 +2,10 @@
 
 Materializes the compounding wiki on disk: for each entity this source touched, (re)write its
 ``entities/<slug>.md`` page from the *cumulative* set of claims (across all sources, each cited to
-its chunk), interlinked via ``[[wikilinks]]`` to co-mentions. Then regenerate ``index.md``, append a
-grep-parseable line to ``log.md``, and **commit to git — one commit per ingested source** (the
-wiki's version history). Pages with >=2 claims get a best-effort LLM-authored lead paragraph.
+its chunk), interlinked via ``[[wikilinks]]`` to co-mentions. Then revise ``overview.md`` (the
+evolving thesis — ``synth.overview``), regenerate ``index.md``, append a grep-parseable line to
+``log.md``, and **commit to git — one commit per ingested source** (the wiki's version history).
+Pages with >=2 claims get a best-effort LLM-authored lead paragraph.
 
 Idempotent: pages are regenerated deterministically from the DB, so a re-run reproduces them (git
 sees no diff → no empty commit). The markdown lives in the ``wiki/`` git repo, not MySQL; the
@@ -87,6 +88,11 @@ def run(ctx: StageContext) -> None:
         )
         repo.set_entity_wiki_path(ctx.session, entity_id, path)
         written += 1
+
+    if s.synth_overview:  # the evolving thesis: revise overview.md in light of this source
+        from doctalk.synth import overview
+
+        overview.rewrite(ctx.session, filename=file.filename, entity_ids=entity_ids, model=model)
 
     wikirepo.write_page("index.md", pages.render_index(ctx.session))  # catalog, every ingest
     wikirepo.append_log(f"## [{utcnow().date().isoformat()}] ingest | {file.filename} ({written} entities)")

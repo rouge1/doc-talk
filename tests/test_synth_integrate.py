@@ -40,11 +40,18 @@ _EXTRACTED = [
 ]
 
 
-def _populate(monkeypatch):
-    """Run synth_entities (mocked extractor) then synth_integrate (LLM summary disabled)."""
+def _populate(monkeypatch, overview_chat=None):
+    """Run synth_entities (mocked extractor) then synth_integrate (LLM summary disabled; the
+    overview chat raises like an unreachable Ollama unless a fake is supplied)."""
+    from doctalk.synth import overview
+
+    def _down(messages, model=None, **kw):
+        raise RuntimeError("ollama unreachable")
+
     monkeypatch.setattr(extract, "extract_entities",
                         lambda passage, model=None, timeout=None: _EXTRACTED)
     monkeypatch.setattr(synth_integrate, "_summarize", lambda name, claims, model: None)
+    monkeypatch.setattr(overview, "_chat", overview_chat or _down)
     with session_scope() as s:
         synth_entities.run(StageContext("a" * 64, None, s))
     with session_scope() as s:
@@ -99,6 +106,51 @@ def test_integrate_writes_pages_index_log_and_catalog(db, monkeypatch, stub_reso
         assert all(p.md_hash and p.entity_id for p in catalog)
         e0 = repo.find_entity_by_norm_key(s, "e0 cipher", "component")
         assert e0.wiki_path == "entities/e0-cipher.md"
+
+
+# --- the evolving overview ---------------------------------------------------
+
+
+def test_overview_is_revised_with_previous_text_as_input(db, monkeypatch, stub_resolve):
+    with session_scope() as s:
+        _doc(s)
+    prompts = []
+
+    def fake_chat(messages, model=None, **kw):
+        prompts.append(messages)
+        return "A corpus about Bluetooth: [[e0-cipher|E0 cipher]] and [[link-manager|Link Manager]]."
+
+    _populate(monkeypatch, overview_chat=fake_chat)
+
+    md = (get_settings().wiki_dir / "overview.md").read_text()
+    assert md.startswith("# Overview\n\n")                       # heading owned by us, not the model
+    assert "[[e0-cipher|E0 cipher]]" in md
+    user = prompts[0][1]["content"]
+    assert "A running, high-level summary" in user               # previous (seed) text was the input
+    assert "NEW SOURCE: a.pdf" in user
+    # digest hands the model ready-made wikilinks + a grounding claim per entity
+    assert "[[link-manager|Link Manager]] (component): Link Manager handles pairing." in user
+
+
+def test_overview_untouched_when_model_unavailable(db, monkeypatch, stub_resolve):
+    with session_scope() as s:
+        _doc(s)
+    _populate(monkeypatch)  # overview chat raises RuntimeError
+
+    md = (get_settings().wiki_dir / "overview.md").read_text()
+    assert "A running, high-level summary" in md                 # seed left in place, page not blanked
+
+
+def test_overview_disabled_by_setting(db, monkeypatch, stub_resolve):
+    monkeypatch.setenv("DOCTALK_SYNTH_OVERVIEW", "false")
+    from doctalk.config import get_settings as gs
+    gs.cache_clear()
+
+    with session_scope() as s:
+        _doc(s)
+    called = []
+    _populate(monkeypatch, overview_chat=lambda *a, **kw: called.append(1) or "text")
+    assert not called
 
 
 def test_integrate_is_idempotent(db, monkeypatch, stub_resolve):

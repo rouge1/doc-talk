@@ -84,8 +84,12 @@ def _coerce(raw: object) -> list[ExtractedEntity]:
             type_ = "concept"
         if not is_pageworthy(name, type_):  # data values (0x0009, "350 ms") never become candidates
             continue
-        aliases = [str(a).strip() for a in item.get("aliases", []) if str(a).strip()]
-        claims = [str(c).strip() for c in item.get("claims", []) if str(c).strip()]
+        # A sloppy model sometimes returns these as a bare string — iterating it would explode a
+        # claim into per-character "claims" ("SALT is…" -> "S","A","L","T",…). Wrap, don't iterate.
+        raw_aliases = item.get("aliases", [])
+        raw_claims = item.get("claims", [])
+        aliases = [str(a).strip() for a in ([raw_aliases] if isinstance(raw_aliases, str) else raw_aliases) if str(a).strip()]
+        claims = [str(c).strip() for c in ([raw_claims] if isinstance(raw_claims, str) else raw_claims) if str(c).strip()]
         if not claims:  # an entity with no grounded claim isn't worth a page
             continue
         out.append(ExtractedEntity(name=name, type=type_, aliases=aliases, claims=claims))

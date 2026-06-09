@@ -428,6 +428,18 @@ def get_entities(session: Session, limit: int | None = None) -> list[Entity]:
     return list(session.scalars(query))
 
 
+def count_claims_by_entity(session: Session, entity_ids: list[int]) -> dict[int, int]:
+    """Claim counts per entity in one grouped query (ranking input for the overview digest)."""
+    if not entity_ids:
+        return {}
+    rows = session.execute(
+        select(Claim.entity_id, func.count())
+        .where(Claim.entity_id.in_(entity_ids))
+        .group_by(Claim.entity_id)
+    ).all()
+    return {eid: n for eid, n in rows}
+
+
 def get_claims_for_entity(session: Session, entity_id: int) -> list[Claim]:
     return list(
         session.scalars(

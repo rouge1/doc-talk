@@ -83,6 +83,9 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
 - **Layout:** `wiki/{index.md, log.md, overview.md, entities/, concepts/, topics/, queries/}`.
 - **`index.md`** — content catalog, updated every ingest. **`log.md`** — append-only, one line per event
   prefixed `## [YYYY-MM-DD] <op> | <title>` so it stays grep-parseable.
+- **`overview.md` is revised, never regenerated.** Each ingest feeds the LLM the *previous* overview +
+  a digest of the new source and asks for an editorial revision (`synth.overview`) — the per-ingest
+  git diff shows the thesis evolving. The one page whose prior text is an input to its next version.
 - **Links:** `[[wikilink]]` style (Obsidian-browsable). Maintain inbound links; orphans are a lint smell.
 - **Provenance is mandatory:** every claim links to its source chunk(s) via `claim_sources`. No
   unsupported claims (lint flags them).
