@@ -140,6 +140,27 @@ export interface Rect {
   h: number;
 }
 
+export interface JobStage {
+  name: string;
+  status: "done" | "running" | "pending" | "error";
+}
+
+export interface JobFile {
+  hash: string;
+  name: string;
+  format: string;
+  stages: JobStage[];
+  done: number;
+  total: number;
+  state: "done" | "running" | "pending" | "error";
+}
+
+export interface JobsData {
+  totals: { done: number; running: number; pending: number; error: number };
+  files: JobFile[];
+  errors: { hash: string; name: string; stage: string; error: string }[];
+}
+
 export interface GalleryItem {
   file_id: number;
   name: string;
@@ -179,6 +200,7 @@ export const api = {
   stats: () => get<Stats>("/api/stats"),
   library: () => get<Library>("/api/library"),
   wiki: () => get<WikiIndex>("/api/wiki"),
+  jobs: () => get<JobsData>("/api/jobs"),
   entity: (stem: string) => get<Entity>(`/api/wiki/entity/${stem}`),
   query: (stem: string) => get<QueryPage>(`/api/wiki/query/${stem}`),
   search: (q: string) => get<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`),

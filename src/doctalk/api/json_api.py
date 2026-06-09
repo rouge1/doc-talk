@@ -17,9 +17,9 @@ from sqlalchemy import func, select
 
 from doctalk.api.wikimd import render
 from doctalk.db import repo
-from doctalk.db.models import Chapter, Chunk, Claim, Entity, File, WikiPage
+from doctalk.db.models import Chapter, Chunk, Claim, Entity, File, Job, JobStatus, WikiPage
 from doctalk.db.session import session_scope
-from doctalk.ingest.pipeline import IMAGE_FORMATS
+from doctalk.ingest.pipeline import IMAGE_FORMATS, pipeline_for
 
 router = APIRouter(prefix="/api")
 _SLUG = re.compile(r"^[a-z0-9-]+$")
@@ -44,6 +44,52 @@ def stats() -> dict:
             "queries": _count(s, WikiPage, WikiPage.kind == "query"),
             "reviews": len(repo.get_open_reviews(s)),
         }
+
+
+def _status_value(status) -> str:
+    return status.value if isinstance(status, JobStatus) else str(status)
+
+
+@router.get("/jobs")
+def jobs() -> dict:
+    """Ingest dashboard: per-file pipeline progress against the resumable-DAG ledger, plus overall
+    status counts and the current error list. A stage with no ledger row is 'pending' (not yet run
+    — e.g. a source ingested before that stage existed)."""
+    totals = {"done": 0, "running": 0, "pending": 0, "error": 0}
+    files, errors = [], []
+    with session_scope() as s:
+        for status, n in s.execute(select(Job.status, func.count()).group_by(Job.status)):
+            totals[_status_value(status)] = totals.get(_status_value(status), 0) + n
+
+        for f in s.scalars(select(File).order_by(File.id)):
+            try:
+                stage_names = [st.name for st in pipeline_for(f.format)]
+            except Exception:  # noqa: BLE001 - unknown format: just show the ledger we have
+                stage_names = []
+            ledger = {}
+            for j in s.scalars(select(Job).where(Job.content_hash == f.content_hash).order_by(Job.id)):
+                ledger[j.stage] = j  # last row per stage wins
+            rows, done = [], 0
+            for name in stage_names:
+                j = ledger.get(name)
+                st = _status_value(j.status) if j else "pending"
+                if st == "done":
+                    done += 1
+                elif st == "error":
+                    errors.append({"hash": f.content_hash, "name": f.filename, "stage": name,
+                                   "error": (j.error or "")[:300]})
+                rows.append({"name": name, "status": st})
+            state = (
+                "error" if any(r["status"] == "error" for r in rows)
+                else "running" if any(r["status"] == "running" for r in rows)
+                else "done" if (stage_names and done == len(stage_names))
+                else "pending"
+            )
+            files.append({
+                "hash": f.content_hash, "name": f.filename, "format": f.format,
+                "stages": rows, "done": done, "total": len(stage_names), "state": state,
+            })
+    return {"totals": totals, "files": files, "errors": errors}
 
 
 @router.get("/library")

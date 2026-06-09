@@ -137,6 +137,28 @@ def test_page_view_rejects_missing_or_unknown(client):
     assert client.get(f"/api/doc/{'a' * 64}/page/1").status_code == 404    # path not on disk
 
 
+def test_jobs_dashboard_progress_and_errors(client):
+    from doctalk.db import repo
+    from doctalk.db.models import Job, JobStatus
+    from doctalk.db.session import session_scope
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="j" * 64, path="/j", filename="j.pdf",
+                         format="pdf", mime="x", byte_size=1)
+        s.add(Job(content_hash="j" * 64, stage="identify", input_hash="i1",
+                  status=JobStatus.done))
+        s.add(Job(content_hash="j" * 64, stage="pdf_structure", input_hash="i2",
+                  status=JobStatus.error, error="boom"))
+
+    data = client.get("/api/jobs").json()
+    assert data["totals"]["done"] == 1 and data["totals"]["error"] == 1
+    f = next(x for x in data["files"] if x["name"] == "j.pdf")
+    assert f["state"] == "error" and f["done"] == 1 and f["total"] > 2
+    names = {r["name"]: r["status"] for r in f["stages"]}
+    assert names["identify"] == "done" and names["pdf_structure"] == "error"
+    assert names["embed_text"] == "pending"            # no ledger row -> pending
+    assert any(e["stage"] == "pdf_structure" and "boom" in e["error"] for e in data["errors"])
+
+
 def test_gallery_lists_and_collapses_clusters(client):
     from doctalk.db import repo
     from doctalk.db.session import session_scope

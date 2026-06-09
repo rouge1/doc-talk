@@ -6,6 +6,7 @@ import Query from "./routes/Query";
 import Search from "./routes/Search";
 import Chat from "./routes/Chat";
 import Gallery from "./routes/Gallery";
+import Jobs from "./routes/Jobs";
 import Doc from "./routes/Doc";
 import Reader from "./routes/Reader";
 import PageView from "./routes/PageView";
@@ -24,6 +25,7 @@ function Masthead() {
           <NavLink to="/chat">Ask</NavLink>
           <NavLink to="/gallery">Gallery</NavLink>
           <NavLink to="/wiki">Wiki</NavLink>
+          <NavLink to="/jobs">Ingest</NavLink>
         </nav>
       </div>
     </header>
@@ -40,6 +42,7 @@ export default function App() {
           <Route path="/search" element={<Search />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/gallery" element={<Gallery />} />
+          <Route path="/jobs" element={<Jobs />} />
           <Route path="/wiki" element={<Wiki />} />
           <Route path="/wiki/entity/:stem" element={<Entity />} />
           <Route path="/wiki/query/:stem" element={<Query />} />

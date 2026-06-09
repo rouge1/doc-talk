@@ -295,6 +295,39 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .leaf-nav a { color: var(--ochre); }
 .leaf-nav .next { margin-left: auto; }
 
+/* ---- ingest dashboard -------------------------------------------------- */
+:root { --s-done:#4a6b3f; --s-running:#9a6b3f; --s-pending:#c7bca6; --s-error:#7d2c24; }
+.live { color: var(--s-running); font-size: .9rem; letter-spacing: .14em; vertical-align: .28em;
+  animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.ledger .n.s-done { color: var(--s-done); }
+.ledger .n.s-running { color: var(--s-running); }
+.ledger .n.s-pending { color: var(--ink-soft); }
+.ledger .n.s-error { color: var(--s-error); }
+
+.job-list { display: grid; gap: .7rem; }
+.job-row { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: .8rem 1rem; }
+.job-head { display: flex; align-items: baseline; gap: .8rem; margin-bottom: .55rem; }
+.job-name { font-family: var(--serif); font-size: 1.08rem; color: var(--ink); text-decoration: none; }
+.job-name:hover { color: var(--oxblood); }
+.job-state { font-family: var(--mono); font-size: .6rem; letter-spacing: .12em; text-transform: uppercase;
+  padding: .12rem .45rem; border-radius: 999px; border: 1px solid currentColor; }
+.job-state.s-done { color: var(--s-done); } .job-state.s-running { color: var(--s-running); }
+.job-state.s-pending { color: var(--ink-soft); } .job-state.s-error { color: var(--s-error); }
+.job-count { margin-left: auto; font-size: .72rem; color: var(--ink-soft); }
+
+.stage-strip { display: flex; gap: 3px; }
+.stage-strip .seg { flex: 1; height: 7px; border-radius: 2px; background: var(--s-pending); }
+.stage-strip .seg.s-done { background: var(--s-done); }
+.stage-strip .seg.s-running { background: var(--s-running); animation: pulse 1.2s ease-in-out infinite; }
+.stage-strip .seg.s-pending { background: var(--rule); }
+.stage-strip .seg.s-error { background: var(--s-error); }
+
+.err-card { border-left: 3px solid var(--s-error); }
+.err-head { font-size: .76rem; letter-spacing: .04em; color: var(--ink); }
+.err-msg { font-family: var(--mono); font-size: .78rem; color: var(--s-error); margin: .35rem 0; white-space: pre-wrap; }
+.err-hint { font-size: .68rem; }
+
 /* ---- gallery (the plate room) ------------------------------------------ */
 .filterbar { display: flex; gap: .6rem; margin: 0 0 1rem; flex-wrap: wrap; }
 .filterbar input {
