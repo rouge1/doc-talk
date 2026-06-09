@@ -95,7 +95,11 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
   unsupported claims (lint flags them).
 - **Contradictions are flagged, not silently overwritten** — cite both the old and new source.
 - **Query answers compound:** a good synthesis is filed back to `wiki/queries/<slug>.md` and linked from
-  the index, not left in chat history.
+  the index, not left in chat history. Filing is automatic, gated by an LLM evaluator
+  (`synth.evaluate`; `ask --save` forces). Re-asks append dated `## Update` snapshots (never
+  overwrite — the answer's truth changes as sources arrive); same-subject re-phrasings merge into
+  the existing page via embedding + a one-shot "same subject, not same shape" LLM judge
+  (`synth.promote`). `wiki-lint` flags filed answers whose cited entities gained claims since.
 - **Documents drive synthesis; photos support.** A relevant photo attaches to an existing entity page as
   evidence; bulk photos never spawn their own synthesis pages.
 - **Data values are not entities.** Numeric/hex literals, measurements, and document self-references

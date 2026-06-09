@@ -124,6 +124,30 @@ def _contradictions(session) -> list[Finding]:
     ]
 
 
+def _stale_queries(session, wiki_dir: Path) -> list[Finding]:
+    """Filed query answers whose cited entity pages gained claims after filing — the answer may no
+    longer reflect the corpus; re-ask to refresh (the re-ask appends a dated Update snapshot)."""
+    stem_to_entity = {
+        Path(p.path).stem: p.entity_id
+        for p in repo.get_wiki_pages_by_kind(session, "entity")
+        if p.entity_id is not None
+    }
+    out = []
+    for page in repo.get_wiki_pages_by_kind(session, "query"):
+        md_path = wiki_dir / page.path
+        if page.last_synth_at is None or not md_path.exists():
+            continue
+        cited = [
+            stem_to_entity[m.group(1).strip()]
+            for m in _LINK.finditer(md_path.read_text(encoding="utf-8"))
+            if m.group(1).strip() in stem_to_entity
+        ]
+        newest = repo.latest_claim_at_for_entities(session, cited)
+        if newest is not None and newest > page.last_synth_at:
+            out.append(Finding("stale_query", "cited entities gained claims — re-ask", page.title))
+    return out
+
+
 def lint(session, wiki_dir: Path) -> list[Finding]:
     return [
         *_orphan_pages(session, wiki_dir),
@@ -132,6 +156,7 @@ def lint(session, wiki_dir: Path) -> list[Finding]:
         *_missing_pages(session),
         *_duplicate_candidates(session),
         *_contradictions(session),
+        *_stale_queries(session, wiki_dir),
     ]
 
 

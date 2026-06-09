@@ -255,7 +255,7 @@ def test_chat_empty_and_wiki_citations_carry_stem(client, monkeypatch):
     assert client.get("/api/chat").json()["answer"] == ""
 
     import doctalk.query.wikichat as wc
-    monkeypatch.setattr(wc, "answer", lambda q, k_chunks=6: {
+    monkeypatch.setattr(wc, "answer", lambda q, k_chunks=6, save=False: {
         "answer": "Bake 30 min.",
         "wiki_citations": [{"name": "Cake", "type": "product", "path": "entities/cake.md"}],
         "citations": [{"n": 1, "file": "a.pdf", "chapter": "Sec", "page": 3,

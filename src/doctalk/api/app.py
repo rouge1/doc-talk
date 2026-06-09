@@ -167,9 +167,10 @@ def search(request: Request, q: str = ""):
 def chat(request: Request, q: str = ""):
     result = None
     if q.strip():
+        from doctalk.config import get_settings
         from doctalk.query.wikichat import answer  # wiki-first, chunk-RAG fallback
 
-        result = answer(q, k_chunks=6)
+        result = answer(q, k_chunks=6, save="auto" if get_settings().chat_auto_promote else False)
     return templates.TemplateResponse(request, "chat.html", {"q": q, "result": result})
 
 

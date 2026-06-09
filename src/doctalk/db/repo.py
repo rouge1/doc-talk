@@ -428,6 +428,15 @@ def get_entities(session: Session, limit: int | None = None) -> list[Entity]:
     return list(session.scalars(query))
 
 
+def latest_claim_at_for_entities(session: Session, entity_ids: list[int]):
+    """Newest claim timestamp across the given entities (staleness check for filed query answers)."""
+    if not entity_ids:
+        return None
+    return session.scalar(
+        select(func.max(Claim.created_at)).where(Claim.entity_id.in_(entity_ids))
+    )
+
+
 def count_claims_by_entity(session: Session, entity_ids: list[int]) -> dict[int, int]:
     """Claim counts per entity in one grouped query (ranking input for the overview digest)."""
     if not entity_ids:

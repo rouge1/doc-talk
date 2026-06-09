@@ -227,9 +227,10 @@ def chat(q: str = "") -> dict:
     q = q.strip()
     if not q:
         return {"query": "", "answer": "", "wiki_citations": [], "citations": []}
+    from doctalk.config import get_settings
     from doctalk.query.wikichat import answer
 
-    res = answer(q, k_chunks=6)
+    res = answer(q, k_chunks=6, save="auto" if get_settings().chat_auto_promote else False)
     return {
         "query": q,
         "answer": res.get("formatted") or res["answer"],  # the typeset dispatch (presenter pass)
@@ -238,6 +239,7 @@ def chat(q: str = "") -> dict:
             for w in res["wiki_citations"]
         ],
         "citations": res["citations"],
+        "saved_path": res.get("saved_path"),  # set when the evaluator filed the answer
     }
 
 

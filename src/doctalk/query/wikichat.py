@@ -22,14 +22,17 @@ def answer(
     k_pages: int = 6,
     k_chunks: int = 6,
     file_id: int | None = None,
-    save: bool = False,
+    save: bool | str = False,
 ) -> dict[str, Any]:
+    """``save``: False = never file; True = force-file; "auto" = the evaluator decides
+    (``synth.evaluate``) whether the answer deserves a ``wiki/queries/`` page."""
     pages = retrieve_pages(question, k=k_pages)
     chunks = retrieve(question, k=k_chunks, file_id=file_id)
 
     if not pages and not chunks:
         return {"answer": "I don't find anything about that in the corpus.",
-                "wiki_citations": [], "citations": [], "pages": [], "hits": [], "saved_path": None}
+                "wiki_citations": [], "citations": [], "pages": [], "hits": [],
+                "saved_path": None, "save_reason": None}
 
     from doctalk.models.chat import chat as ollama_chat
 
@@ -52,8 +55,15 @@ def answer(
         "pages": pages,
         "hits": chunks,
         "saved_path": None,
+        "save_reason": None,
     }
-    if save:
+    do_save = bool(save)
+    if save == "auto":  # the evaluator decides whether this answer compounds
+        from doctalk.synth.evaluate import should_save
+
+        verdict = should_save(question, text, n_pages=len(pages), n_chunks=len(chunks))
+        do_save, result["save_reason"] = verdict.save, verdict.reason
+    if do_save:
         from doctalk.synth.promote import promote_query
 
         result["saved_path"] = promote_query(question, text, pages, chunks)

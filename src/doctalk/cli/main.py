@@ -432,9 +432,14 @@ def ask(
 
         result = answer(question, k=k, file_id=file_id)
     else:
+        from doctalk.config import get_settings
         from doctalk.query.wikichat import answer as wiki_answer
 
-        result = wiki_answer(question, k_chunks=k, file_id=file_id, save=save)
+        # --save forces past the evaluator; otherwise good answers auto-file (chat_auto_promote).
+        save_mode: bool | str = True if save else (
+            "auto" if get_settings().chat_auto_promote else False
+        )
+        result = wiki_answer(question, k_chunks=k, file_id=file_id, save=save_mode)
 
     typer.echo(result["answer"])
     for cite in result.get("wiki_citations", []):
@@ -445,6 +450,8 @@ def ask(
             typer.echo(f"  [{c['n']}] {c['file']} · {c['chapter'] or 'n/a'} · p.{c['page']}")
     if result.get("saved_path"):
         typer.echo(f"\nfiled to wiki/{result['saved_path']}")
+    elif result.get("save_reason"):
+        typer.echo(f"\n(not filed — {result['save_reason']})")
 
 
 @app.command()

@@ -117,6 +117,13 @@ class Settings(BaseSettings):
     # Off by default in tests/headless; the API turns it on. Doubles answer latency, so the SPA
     # caches results client-side.
     chat_format: bool = True
+    # "Query answers compound": good answers are filed to wiki/queries/ automatically, gated by an
+    # LLM evaluator (synth.evaluate) so lookups/failures don't silt the wiki up. `ask --save`
+    # forces past the gate; set false for read-only chat.
+    chat_auto_promote: bool = True
+    # Question-title cosine above which two queries get the one-shot "same subject?" LLM judge
+    # (synth.promote). Same-subject re-phrasings append to the existing page instead of forking.
+    query_dup_threshold: float = 0.85
 
     # --- Entity resolution (synth_resolve; see docs/entity-resolution.md) ---
     # Two-threshold band over a [0,1] score: confident MATCH only when high AND well-separated from
