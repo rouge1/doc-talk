@@ -9,6 +9,7 @@ export default function Passage() {
   const { hash = "", chunk = "" } = useParams();
   const [params] = useSearchParams();
   const noHighlight = params.has("nohl");
+  const hl = params.get("q") ?? ""; // a search query to highlight (vs ?focus for the whole chunk)
   const { data, error, loading } = useFetch(
     () => api.find(hash, Number(chunk)),
     `find:${hash}:${chunk}`,
@@ -16,6 +17,6 @@ export default function Passage() {
 
   if (loading) return <div className="loading">Rendering the original document…</div>;
   if (error || !data) return <div className="empty">Couldn't locate this passage.</div>;
-  const to = `/doc/${hash}/page/${data.page}${noHighlight ? "" : `?focus=${chunk}`}`;
-  return <Navigate to={to} replace />;
+  const qs = noHighlight ? "" : hl ? `?q=${encodeURIComponent(hl)}` : `?focus=${chunk}`;
+  return <Navigate to={`/doc/${hash}/page/${data.page}${qs}`} replace />;
 }

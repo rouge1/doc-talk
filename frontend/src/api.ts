@@ -66,11 +66,15 @@ export interface SearchHit {
   rerank_score: number | null;
   content_hash: string | null;
   chapter_id: number | null;
+  source?: "keyword" | "semantic" | "both" | null; // which arm surfaced the hit
 }
+
+export type SearchMode = "hybrid" | "simple";
 
 export interface SearchResult {
   query: string;
   hits: SearchHit[];
+  mode?: SearchMode;
 }
 
 export interface WikiCitation {
@@ -203,12 +207,17 @@ export const api = {
   jobs: () => get<JobsData>("/api/jobs"),
   entity: (stem: string) => get<Entity>(`/api/wiki/entity/${stem}`),
   query: (stem: string) => get<QueryPage>(`/api/wiki/query/${stem}`),
-  search: (q: string) => get<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, mode: SearchMode = "hybrid") =>
+    get<SearchResult>(`/api/search?q=${encodeURIComponent(q)}&mode=${mode}`),
   chat: (q: string) => get<ChatAnswer>(`/api/chat?q=${encodeURIComponent(q)}`),
   doc: (hash: string) => get<Outline>(`/api/doc/${hash}`),
   chapter: (hash: string, id: number) => get<ChapterRead>(`/api/doc/${hash}/chapter/${id}`),
-  page: (hash: string, page: number, chunk?: number | null) =>
-    get<PageInfo>(`/api/doc/${hash}/page/${page}${chunk ? `?chunk_id=${chunk}` : ""}`),
+  page: (hash: string, page: number, chunk?: number | null, hl?: string | null) => {
+    const p = new URLSearchParams();
+    if (hl) p.set("q", hl); // highlight the search query's terms (takes precedence)
+    else if (chunk) p.set("chunk_id", String(chunk)); // else highlight the whole cited chunk
+    return get<PageInfo>(`/api/doc/${hash}/page/${page}${p.toString() ? `?${p}` : ""}`);
+  },
   find: (hash: string, chunk: number) =>
     get<{ page: number }>(`/api/doc/${hash}/find?chunk_id=${chunk}`),
   gallery: (q: string, fmt: string, minKb: string) => {
@@ -229,18 +238,26 @@ const OFFICE = /\.(docx|doc|odt|rtf|pptx|ppt|xlsx)$/i;
 //  - native PDF: straight to the page viewer (the page is known);
 //  - office doc: the passage route, which locates the rendered page first;
 //  - otherwise: the reflowed-text chapter reader.
-export const sourcePath = (h: {
-  content_hash: string | null;
-  file?: string | null;
-  page?: number | null;
-  chapter_id?: number | null;
-  chunk_id?: number | null;
-}) => {
+// `highlight` (the search query) is threaded through so a search click lights up the words you
+// searched; without it (an Ask citation) the whole cited chunk is highlighted via ?focus.
+export const sourcePath = (
+  h: {
+    content_hash: string | null;
+    file?: string | null;
+    page?: number | null;
+    chapter_id?: number | null;
+    chunk_id?: number | null;
+  },
+  highlight?: string,
+) => {
   if (!h.content_hash) return "#";
-  if (reExt(h.file, PDF) && h.page)
-    return `/doc/${h.content_hash}/page/${h.page}${h.chunk_id ? `?focus=${h.chunk_id}` : ""}`;
+  const hl = highlight ? `q=${encodeURIComponent(highlight)}` : "";
+  if (reExt(h.file, PDF) && h.page) {
+    const qs = hl || (h.chunk_id ? `focus=${h.chunk_id}` : "");
+    return `/doc/${h.content_hash}/page/${h.page}${qs ? `?${qs}` : ""}`;
+  }
   if (reExt(h.file, OFFICE) && h.chunk_id)
-    return `/doc/${h.content_hash}/passage/${h.chunk_id}`;
+    return `/doc/${h.content_hash}/passage/${h.chunk_id}${hl ? `?${hl}` : ""}`;
   if (h.chapter_id)
     return `/doc/${h.content_hash}/chapter/${h.chapter_id}${h.chunk_id ? `?focus=${h.chunk_id}` : ""}`;
   return `/doc/${h.content_hash}`;

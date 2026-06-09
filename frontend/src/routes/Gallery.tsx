@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api } from "../api";
-import { useFetch } from "../useFetch";
+import { api, type Gallery as GalleryData } from "../api";
+import { getCached, setCached } from "../cache";
+
+const NS = "gallery";
 
 export default function Gallery() {
   const [params, setParams] = useSearchParams();
@@ -11,11 +13,41 @@ export default function Gallery() {
   const [draft, setDraft] = useState(q);
   const [draftFmt, setDraftFmt] = useState(fmt);
   const [draftKb, setDraftKb] = useState(minKb);
+  const [data, setData] = useState<GalleryData | null>(null);
+  const [error, setError] = useState(false);
 
-  const { data, error, loading } = useFetch(
-    () => api.gallery(q, fmt, minKb),
-    `gallery:${q}:${fmt}:${minKb}`,
-  );
+  // Cache-first, keyed on the filter combo — returning to the same filters (or reloading) restores
+  // instantly instead of re-running CLIP; the empty/all-images view is cached too.
+  const cacheKey = `${q}:${fmt}:${minKb}`;
+  useEffect(() => {
+    setError(false);
+    const cached = getCached<GalleryData>(NS, cacheKey);
+    if (cached) {
+      setData(cached);
+      return;
+    }
+    setData(null);
+    let alive = true;
+    api
+      .gallery(q, fmt, minKb)
+      .then((d) => {
+        if (!alive) return;
+        setData(d);
+        setCached(NS, cacheKey, d);
+      })
+      .catch(() => alive && setError(true));
+    return () => {
+      alive = false;
+    };
+  }, [cacheKey, q, fmt, minKb]);
+
+  useEffect(() => { // keep the inputs in sync with the URL filters
+    setDraft(q);
+    setDraftFmt(fmt);
+    setDraftKb(minKb);
+  }, [q, fmt, minKb]);
+
+  const loading = !data && !error;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

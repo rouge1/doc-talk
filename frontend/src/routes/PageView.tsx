@@ -3,19 +3,21 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 
-// Keep the focused section's highlight across page nav (it follows a span onto the next page).
-const pageHref = (hash: string, page: number, focus: number | null) =>
-  `/doc/${hash}/page/${page}${focus ? `?focus=${focus}` : ""}`;
+// Keep the highlight across page nav: a search query (?q, lights up matched terms) or a focused
+// chunk (?focus, lights up the whole cited section, which may span onto the next page).
+const pageHref = (hash: string, page: number, focus: number | null, hl: string) =>
+  `/doc/${hash}/page/${page}${hl ? `?q=${encodeURIComponent(hl)}` : focus ? `?focus=${focus}` : ""}`;
 
 export default function PageView() {
   const { hash = "", page = "" } = useParams();
   const [params] = useSearchParams();
   const focus = Number(params.get("focus")) || null;
+  const hl = params.get("q") ?? "";
   const p = Number(page);
   const firstHl = useRef<HTMLSpanElement>(null);
   const { data, error, loading } = useFetch(
-    () => api.page(hash, p, focus),
-    `page:${hash}:${p}:${focus}`,
+    () => api.page(hash, p, focus, hl || undefined),
+    `page:${hash}:${p}:${focus}:${hl}`,
   );
 
   // Once the rasterized page has laid out, bring the first highlight into view.
@@ -44,10 +46,10 @@ export default function PageView() {
 
       <nav className="leaf-nav mono">
         {data.page > 1
-          ? <Link to={pageHref(hash, data.page - 1, focus)}>← p.{data.page - 1}</Link>
+          ? <Link to={pageHref(hash, data.page - 1, focus, hl)}>← p.{data.page - 1}</Link>
           : <span />}
         {data.page < data.page_count
-          ? <Link to={pageHref(hash, data.page + 1, focus)}>p.{data.page + 1} →</Link>
+          ? <Link to={pageHref(hash, data.page + 1, focus, hl)}>p.{data.page + 1} →</Link>
           : <span />}
       </nav>
     </div>

@@ -225,6 +225,24 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 }
 .searchbar button:hover { background: var(--oxblood); }
 
+/* Simple|Hybrid segmented control — a mono catalog-toggle that matches the masthead labels. */
+.mode-toggle { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+.mode-toggle button {
+  padding: 0 .9rem; font-family: var(--mono); font-size: .66rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-soft); background: var(--card); border: 0;
+  border-right: 1px solid var(--rule); cursor: pointer; transition: background .15s, color .15s;
+}
+.mode-toggle button:last-child { border-right: 0; }
+.mode-toggle button:hover { color: var(--ink); }
+.mode-toggle button.on { background: var(--ochre); color: var(--paper); }
+@media (max-width: 620px) { .searchbar { flex-wrap: wrap; } .mode-toggle { order: -1; } }
+
+/* Searched-term highlight in result snippets — warm ochre wash, same family as the page viewer. */
+.snippet .hl-term {
+  background: rgba(154, 107, 63, .22); color: inherit; border-radius: 2px; padding: 0 .06em;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+
 .results { display: grid; gap: .8rem; }
 .result {
   display: block; padding: 1rem 1.1rem; background: var(--card); border: 1px solid var(--rule);
@@ -238,6 +256,15 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
   border: 1px solid var(--rule); border-radius: 2px; padding: .05rem .4rem;
 }
 .result .loc { font-size: .68rem; letter-spacing: .08em; color: var(--ink-soft); }
+/* Provenance chip: which arm surfaced the hit. "semantic" tinted ochre so a no-highlight result
+   reads as "matched by meaning" rather than looking like a mistake. */
+.result .arm {
+  margin-left: auto; font-size: .58rem; letter-spacing: .12em; text-transform: uppercase;
+  padding: .08rem .42rem; border-radius: 2px; border: 1px solid var(--rule); color: var(--ink-soft);
+  white-space: nowrap;
+}
+.result .arm-semantic { color: var(--ochre); border-color: var(--ochre-lt); background: rgba(154,107,63,.07); }
+.result .arm-both { color: var(--good); border-color: var(--good); }
 .result .snippet { margin: 0; font-family: var(--serif); font-size: 1rem; color: var(--ink-soft); line-height: 1.55; }
 
 /* ask / chat */
