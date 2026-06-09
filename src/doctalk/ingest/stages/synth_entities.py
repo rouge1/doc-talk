@@ -10,7 +10,10 @@ page rewriting + git commit are ``synth_integrate`` (the slice after).
 Why a sweep, not a sample: a 40-chunk evenly-spaced sample of a 6,000-chunk spec is an incoherent
 jumble that a small local model answers in prose, yielding zero entities. Consecutive windows stay
 on-topic, so the model actually emits JSON. Obvious non-content chunks (table-of-contents dotted
-leaders, index/glossary lists) are skipped so calls aren't spent on page-number filler.
+leaders, index/glossary lists) are skipped so calls aren't spent on page-number filler. Two gates
+keep data values out of the entity space: the shape gate (``synth.gate``, applied inside
+``extract``) rejects numeric/hex literals and doc self-references, and the salience gate
+(``_drop_low_salience``) drops one-window one-claim candidates from large sweeps.
 
 Idempotent: clears this file's prior mentions/claims first, then recomputes affected entities'
 source counts — a re-drop or model upgrade re-synthesizes cleanly.
@@ -60,6 +63,7 @@ class _Candidate:
     _seen_claims: set[str] = field(default_factory=set)
     src_chunk_ids: list[int] = field(default_factory=list)
     _seen_chunks: set[int] = field(default_factory=set)
+    windows_seen: int = 0  # distinct windows that surfaced this entity (the salience signal)
 
     def absorb(self, ent: extract.ExtractedEntity, window: list, max_claims: int) -> None:
         if self.type == "concept" and ent.type != "concept":
@@ -75,6 +79,32 @@ class _Candidate:
                 self._seen_chunks.add(chunk.id)
                 if len(self.src_chunk_ids) < _MAX_PROV_CHUNKS:
                     self.src_chunk_ids.append(chunk.id)
+
+
+def _drop_low_salience(session, cands: dict[str, _Candidate], *, n_windows: int, settings) -> int:
+    """Drop one-off candidates from a large sweep, in place; returns how many were dropped.
+
+    On a 600-window spec, a name the model surfaced in a single window with a single claim is
+    almost always noise (a value, a heading fragment, a hallucinated subject) — a real concept
+    recurs. Kept if it surfaced in >= ``synth_min_windows`` windows, carries >=
+    ``synth_min_claims`` claims, or exactly norm-key-matches an entity we already know (then it
+    adds a source to an established page — cross-source compounding, the point of the wiki).
+    Small documents (< ``synth_salience_min_windows`` windows) skip this entirely: a recipe docx
+    yields one window, where "appeared once" carries no signal.
+    """
+    if not settings.synth_full_sweep or n_windows < settings.synth_salience_min_windows:
+        return 0
+    known = {e.norm_key for e in repo.find_entities_by_norm_keys(session, set(cands))}
+    drop = [
+        key
+        for key, cand in cands.items()
+        if key not in known
+        and cand.windows_seen < settings.synth_min_windows
+        and len(cand.claims) < settings.synth_min_claims
+    ]
+    for key in drop:
+        del cands[key]
+    return len(drop)
 
 
 def run(ctx: StageContext) -> None:
@@ -110,6 +140,7 @@ def run(ctx: StageContext) -> None:
             # skips its window — but real bugs (TypeError, etc.) still propagate and fail loudly.
             failed += 1
             continue
+        seen_this_window: set[str] = set()
         for ent in extracted:
             key = norm_key(ent.name)
             if not key:
@@ -118,6 +149,11 @@ def run(ctx: StageContext) -> None:
             if cand is None:
                 cand = cands[key] = _Candidate(name=ent.name, type=ent.type)
             cand.absorb(ent, win, s.synth_max_claims_per_entity)
+            seen_this_window.add(key)
+        for key in seen_this_window:
+            cands[key].windows_seen += 1
+
+    skipped = _drop_low_salience(ctx.session, cands, n_windows=len(windows), settings=s)
 
     touched = set(repo.clear_synth_for_file(ctx.session, file_id))  # idempotent re-synth
     all_keys = set(cands)  # co-extracted entities co-mention each other (resolver signal)
@@ -182,3 +218,4 @@ def run(ctx: StageContext) -> None:
 
     ctx.scratch["synth_entities"] = len(cands)
     ctx.scratch["synth_entities_failed_windows"] = failed
+    ctx.scratch["synth_entities_low_salience"] = skipped

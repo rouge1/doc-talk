@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     synth_max_claims_per_entity: int = 12  # cap claims kept per entity across the sweep
     synth_max_chunks: int = 40       # sample size when synth_full_sweep is off
     synth_chunk_chars: int = 1200    # per-chunk char cap inside the extraction window
+    # Salience gate (full-sweep mode only): on a big document, a candidate surfacing in a single
+    # window with a single claim is almost always noise — keep it only if it recurs, says more, or
+    # matches an entity we already know. Small docs (< synth_salience_min_windows windows) are
+    # exempt: with one window, "appeared once" carries no signal. The shape gate (synth.gate —
+    # numeric/hex literals, measurements, doc self-references) applies always, at extraction.
+    synth_min_windows: int = 2       # windows a one-claim candidate must recur in to be kept
+    synth_min_claims: int = 2        # claims that excuse a single-window candidate
+    synth_salience_min_windows: int = 5  # sweeps smaller than this skip the salience gate
     # synth_integrate writes an LLM-authored lead paragraph for multi-claim entity pages (the
     # signature "authored prose"). Best-effort + bounded to entities with >=2 claims to cap LLM
     # calls; the page is valid (claims + provenance + links) even when this is off or the LLM fails.

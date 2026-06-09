@@ -63,8 +63,10 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
 - `doctalk stats` — file count + job counts by status.
 - `pytest -q` — Phase 0 verification (DAG idempotency + crash/resume), runs on a temp SQLite db.
 
-**Planned:** `doctalk rebuild-index` (Phase 1+); `doctalk wiki-lint` · `wiki-audit` · `wiki-merge` ·
-`wiki-bootstrap` (Phase 4).
+**Wiki maintenance (Phase 4):** `doctalk wiki-lint [--fix]` · `wiki-audit` · `wiki-merge` ·
+`wiki-prune [--dry-run]` (drop noise entities that predate the extraction gate — reversible).
+
+**Planned:** `doctalk wiki-bootstrap` (Phase 4, last-resort).
 
 **Lint/type:** `ruff check .` · `mypy src` (dev extras). After Phase 1 lands real stages, re-run
 `/init` to refresh this section.
@@ -89,6 +91,10 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
   the index, not left in chat history.
 - **Documents drive synthesis; photos support.** A relevant photo attaches to an existing entity page as
   evidence; bulk photos never spawn their own synthesis pages.
+- **Data values are not entities.** Numeric/hex literals, measurements, and document self-references
+  ("0x0009", "350 ms", "Section 2.3") never get pages: `synth.gate.is_pageworthy` rejects them at
+  extraction, a salience gate drops one-window one-claim candidates from large sweeps, and
+  `wiki-prune` removes pre-gate noise retroactively (reversible: `status='pruned'`, claims kept).
 - **Entity resolution** (the `[[same entity]]` decisions) follows `docs/entity-resolution.md`:
   normalize → block → score → two-threshold band (auto-match / new / defer), LLM-adjudicate the
   ambiguous slice, human only on `can't-tell`. Merges/splits are reversible (`entity_merges`); prefer

@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 
 from doctalk.models.chat import chat
+from doctalk.synth.gate import is_pageworthy
 
 # Controlled vocabulary keeps pages groupable and the resolver's type-gating meaningful; an
 # unrecognized type falls back to the catch-all "concept" rather than spawning a junk type.
@@ -26,7 +27,10 @@ _SYSTEM = (
     "You are a precise knowledge-extraction component for a local wiki. Given a passage, extract "
     "the salient named entities (concepts, components, protocols, people, organizations, products, "
     "standards) and, for each, a few short factual claims stated IN the passage. Use only "
-    "information present in the passage — never invent facts. Respond with JSON only."
+    "information present in the passage — never invent facts. Extract only subjects a reader would "
+    "want a reference page about. Do NOT extract data values: numeric or hexadecimal literals "
+    "(0x0009, 350, 3.5), measurements or units (100 ms, 2.4 GHz), parameter/field values, or the "
+    "document's own section/table/figure numbers (Section 2.3, Table 5). Respond with JSON only."
 )
 
 _SCHEMA_HINT = (
@@ -78,6 +82,8 @@ def _coerce(raw: object) -> list[ExtractedEntity]:
         type_ = str(item.get("type", "concept")).strip().lower()
         if type_ not in ENTITY_TYPES:
             type_ = "concept"
+        if not is_pageworthy(name, type_):  # data values (0x0009, "350 ms") never become candidates
+            continue
         aliases = [str(a).strip() for a in item.get("aliases", []) if str(a).strip()]
         claims = [str(c).strip() for c in item.get("claims", []) if str(c).strip()]
         if not claims:  # an entity with no grounded claim isn't worth a page

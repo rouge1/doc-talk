@@ -518,6 +518,20 @@ def get_wiki_pages_by_kind(session: Session, kind: str) -> list[WikiPage]:
     )
 
 
+def delete_wiki_page(session: Session, path: str) -> None:
+    """Drop a page's catalog row (wiki-prune removed its file; catalog must match disk)."""
+    session.execute(delete(WikiPage).where(WikiPage.path == path))
+
+
+def prune_entity(session: Session, entity_id: int) -> None:
+    """Mark a gate-failing entity ``pruned`` (reversible — claims/mentions stay, auditable) and
+    drop its page pointer. Status excludes it from the index and lint; flip back to restore."""
+    entity = session.get(Entity, entity_id)
+    if entity is not None:
+        entity.status = "pruned"
+        entity.wiki_path = None
+
+
 # --- entity resolution (synth_resolve) -------------------------------------
 
 

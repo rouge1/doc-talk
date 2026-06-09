@@ -336,6 +336,44 @@ def wiki_audit() -> None:
 
 
 @app.command()
+def wiki_prune(
+    dry_run: bool = typer.Option(False, "--dry-run", help="list what would be pruned; change nothing"),
+) -> None:
+    """Drop noise entities that predate the extraction gate (numeric/hex literals, measurements,
+    document self-references): status -> 'pruned' (reversible), page + catalog row + name vector
+    removed, index regenerated, one git commit."""
+    from doctalk.config import get_settings
+    from doctalk.db.models import utcnow
+    from doctalk.synth import pages, prune, wikirepo
+
+    wiki_dir = get_settings().wiki_dir
+    if dry_run:
+        with session_scope() as session:
+            names = [e.name for e in prune.junk_entities(session)]
+        if not names:
+            typer.echo("wiki-prune: nothing to prune ✓")
+            return
+        for name in names[:40]:
+            typer.echo(f"  - {name!r}")
+        if len(names) > 40:
+            typer.echo(f"  … and {len(names) - 40} more")
+        typer.echo(f"would prune {len(names)} entit(ies); run without --dry-run to apply")
+        return
+
+    with session_scope() as session:
+        pruned = prune.prune(session, wiki_dir)
+        if pruned:
+            wikirepo.write_page("index.md", pages.render_index(session))
+    if not pruned:
+        typer.echo("wiki-prune: nothing to prune ✓")
+        return
+    wikirepo.append_log(f"## [{utcnow().date().isoformat()}] prune | {len(pruned)} noise entities")
+    wikirepo.commit(f"wiki-prune: drop {len(pruned)} noise entities")
+    sample = ", ".join(repr(n) for n in pruned[:8])
+    typer.echo(f"pruned {len(pruned)} entit(ies): {sample}" + (" …" if len(pruned) > 8 else ""))
+
+
+@app.command()
 def wiki_init() -> None:
     """Create the wiki/ git repo scaffold (dirs + index.md/log.md/overview.md). Idempotent."""
     from doctalk.synth import wikirepo

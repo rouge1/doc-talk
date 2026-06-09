@@ -242,7 +242,8 @@ class Entity(Base):
     embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # legacy/reserved
     name_embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # entity_names row
     # active = a real page; unresolved = provisionally-new from a DEFER (wiki-lint surfaces it);
-    # merged_into = folded into another entity by a merge (kept as a redirect, never hard-deleted).
+    # merged_into = folded into another entity by a merge (kept as a redirect, never hard-deleted);
+    # pruned = failed the pageworthiness gate retroactively (wiki-prune; reversible, claims kept).
     status: Mapped[str] = mapped_column(String(16), default="active")
     source_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
