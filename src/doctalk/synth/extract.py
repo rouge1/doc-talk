@@ -39,6 +39,21 @@ _SCHEMA_HINT = (
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
 
+def _json_blob(text: str) -> str | None:
+    """Best-effort: pull the outermost JSON object/array out of a prose-wrapped reply.
+
+    A small local model under load sometimes ignores JSON mode and pads the payload with prose
+    ("Here is the breakdown… {…}"). Rather than discard the whole window, grab the first ``{``/``[``
+    through its matching last ``}``/``]`` and let the caller try to parse that.
+    """
+    starts = [i for i in (text.find("{"), text.find("[")) if i != -1]
+    if not starts:
+        return None
+    start = min(starts)
+    end = max(text.rfind("}"), text.rfind("]"))
+    return text[start : end + 1] if end > start else None
+
+
 @dataclass
 class ExtractedEntity:
     name: str
@@ -77,11 +92,21 @@ def parse_entities(text: str) -> list[ExtractedEntity]:
     try:
         return _coerce(json.loads(cleaned))
     except (json.JSONDecodeError, TypeError, ValueError):
-        return []
+        pass
+    blob = _json_blob(cleaned)  # prose-wrapped JSON -> salvage the payload
+    if blob is not None and blob != cleaned:
+        try:
+            return _coerce(json.loads(blob))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return []
+    return []
 
 
-def extract_entities(passage: str, *, model: str | None = None) -> list[ExtractedEntity]:
+def extract_entities(
+    passage: str, *, model: str | None = None, timeout: float | None = None
+) -> list[ExtractedEntity]:
     """Call the local LLM to extract entities + claims from one passage of source text."""
+    kwargs = {"timeout": timeout} if timeout is not None else {}
     response = chat(
         [
             {"role": "system", "content": _SYSTEM},
@@ -90,5 +115,6 @@ def extract_entities(passage: str, *, model: str | None = None) -> list[Extracte
         model=model,
         format="json",
         options={"temperature": 0},  # deterministic-ish extraction
+        **kwargs,
     )
     return parse_entities(response)

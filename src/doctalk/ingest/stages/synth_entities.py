@@ -1,11 +1,16 @@
 """synth_entities — sub-stage (1) of the Phase 4 synthesis pass.
 
-Reads a bounded, evenly-spaced sample of the source's chunks, has the local LLM extract entities +
-claims (``synth.extract``), then persists them with **deterministic, auditable provenance**: each
-entity/claim is tied to the real chunks whose text contains the entity's name or an alias — never to
-ids the model asserted. Resolution here is a *placeholder* (exact normalized-name match via
-``repo.get_or_create_entity``); the real two-threshold fuzzy/embedding ``synth_resolve`` supersedes
-it next. Page rewriting + git commit are ``synth_integrate`` (the slice after).
+Sweeps the whole source in **coherent, bounded windows of consecutive chunks** (one LLM call each),
+has the local model extract entities + claims (``synth.extract``), and merges the candidates across
+windows by normalized key. Each is then persisted with **deterministic, auditable provenance**: every
+entity/claim is tied to the real chunks whose text contains its name or an alias — never to ids the
+model asserted. Resolution (MATCH/NEW/DEFER) is the two-threshold fuzzy/embedding ``synth_resolve``;
+page rewriting + git commit are ``synth_integrate`` (the slice after).
+
+Why a sweep, not a sample: a 40-chunk evenly-spaced sample of a 6,000-chunk spec is an incoherent
+jumble that a small local model answers in prose, yielding zero entities. Consecutive windows stay
+on-topic, so the model actually emits JSON. Obvious non-content chunks (table-of-contents dotted
+leaders, index/glossary lists) are skipped so calls aren't spent on page-number filler.
 
 Idempotent: clears this file's prior mentions/claims first, then recomputes affected entities'
 source counts — a re-drop or model upgrade re-synthesizes cleanly.
@@ -13,11 +18,28 @@ source counts — a re-drop or model upgrade re-synthesizes cleanly.
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass, field
+
 from doctalk.config import get_settings
 from doctalk.db import repo
 from doctalk.ingest.dag import StageContext
 from doctalk.synth import extract, resolve
 from doctalk.synth.normalize import norm_key
+
+# A table-of-contents / index line trails off in dotted leaders to a page number ("Foo ..... 412").
+# Chunks dominated by these carry no extractable knowledge — only navigation filler.
+_LEADER_LINE = re.compile(r"\.{4,}\s*\d*\s*$")
+_MAX_PROV_CHUNKS = 25  # cap provenance breadth per entity (a spec-wide term needn't cite 100 chunks)
+
+
+def _is_noise_chunk(text: str) -> bool:
+    """True for table-of-contents / index chunks (mostly dotted-leader page references)."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 4:
+        return False
+    leaders = sum(1 for ln in lines if _LEADER_LINE.search(ln))
+    return leaders / len(lines) >= 0.3
 
 
 def _sample_chunks(chunks: list, limit: int) -> list:
@@ -33,6 +55,40 @@ def _window(chunks: list, char_cap: int) -> str:
     return "\n\n".join(c.text[:char_cap] for c in chunks)
 
 
+def _windows(chunks: list, size: int) -> list[list]:
+    """Split into windows of ``size`` consecutive content chunks (TOC/index filler dropped)."""
+    content = [c for c in chunks if not _is_noise_chunk(c.text)] or chunks
+    return [content[i : i + size] for i in range(0, len(content), max(1, size))]
+
+
+@dataclass
+class _Candidate:
+    """One entity accumulated across every window it surfaced in."""
+
+    name: str
+    type: str
+    aliases: set[str] = field(default_factory=set)
+    claims: list[str] = field(default_factory=list)  # de-duped, insertion-ordered
+    _seen_claims: set[str] = field(default_factory=set)
+    src_chunk_ids: list[int] = field(default_factory=list)
+    _seen_chunks: set[int] = field(default_factory=set)
+
+    def absorb(self, ent: extract.ExtractedEntity, window: list, max_claims: int) -> None:
+        if self.type == "concept" and ent.type != "concept":
+            self.type = ent.type  # prefer a specific type over the catch-all
+        self.aliases.update(ent.aliases)
+        for c in ent.claims:
+            if c not in self._seen_claims and len(self.claims) < max_claims:
+                self._seen_claims.add(c)
+                self.claims.append(c)
+        needles = [self.name.lower(), *(a.lower() for a in self.aliases)]
+        for chunk in window:
+            if chunk.id not in self._seen_chunks and any(n in chunk.text.lower() for n in needles):
+                self._seen_chunks.add(chunk.id)
+                if len(self.src_chunk_ids) < _MAX_PROV_CHUNKS:
+                    self.src_chunk_ids.append(chunk.id)
+
+
 def run(ctx: StageContext) -> None:
     file_id = repo.get_file_id(ctx.session, ctx.content_hash)
     if file_id is None:  # pragma: no cover - defensive
@@ -43,38 +99,59 @@ def run(ctx: StageContext) -> None:
         return
 
     s = get_settings()
-    sample = _sample_chunks(chunks, s.synth_max_chunks)
-    entities = extract.extract_entities(
-        _window(sample, s.synth_chunk_chars), model=s.synth_model or s.chat_model
+    model = s.synth_model or s.chat_model
+    windows = (
+        _windows(chunks, s.synth_window_chunks)
+        if s.synth_full_sweep
+        else [_sample_chunks(chunks, s.synth_max_chunks)]
     )
 
-    touched = set(repo.clear_synth_for_file(ctx.session, file_id))  # idempotent re-synth
-
-    # Co-extracted entities are each other's co-mentions — a disambiguation signal for the resolver.
-    all_keys = {norm_key(e.name) for e in entities if norm_key(e.name)}
-
-    for ent in entities:
-        key = norm_key(ent.name)
-        if not key:
+    # Sweep every window, merging candidates by normalized key as we go. A single slow/failed local
+    # call (timeout, transient Ollama error) must not abort the whole sweep — skip that window and
+    # press on, so 595 good windows survive one bad one (the stage degrades, never crashes).
+    cands: dict[str, _Candidate] = {}
+    by_chunk: dict[int, object] = {c.id: c for c in chunks}
+    failed = 0
+    for win in windows:
+        try:
+            extracted = extract.extract_entities(
+                _window(win, s.synth_chunk_chars), model=model, timeout=s.synth_call_timeout
+            )
+        except (RuntimeError, TimeoutError):
+            # A timed-out / unreachable Ollama call (chat() wraps transport errors as RuntimeError)
+            # skips its window — but real bugs (TypeError, etc.) still propagate and fail loudly.
+            failed += 1
             continue
+        for ent in extracted:
+            key = norm_key(ent.name)
+            if not key:
+                continue
+            cand = cands.get(key)
+            if cand is None:
+                cand = cands[key] = _Candidate(name=ent.name, type=ent.type)
+            cand.absorb(ent, win, s.synth_max_claims_per_entity)
 
-        # Deterministic provenance: which sampled chunks actually name this entity?
-        needles = [ent.name.lower(), *(a.lower() for a in ent.aliases)]
-        src_chunks = [c for c in sample if any(n in c.text.lower() for n in needles)]
+    touched = set(repo.clear_synth_for_file(ctx.session, file_id))  # idempotent re-synth
+    all_keys = set(cands)  # co-extracted entities co-mention each other (resolver signal)
+
+    for key, cand in cands.items():
+        # Deterministic provenance: the real chunks that name this entity (null if none did).
         prov = (
-            [{"file_id": file_id, "chunk_id": c.id} for c in src_chunks]
-            if src_chunks
+            [{"file_id": file_id, "chunk_id": cid} for cid in cand.src_chunk_ids]
+            if cand.src_chunk_ids
             else [{"file_id": file_id, "chunk_id": None}]
         )
+        context_text = " ".join(
+            by_chunk[cid].text for cid in cand.src_chunk_ids if cid in by_chunk
+        )
 
-        # Resolve to a canonical entity (MATCH existing / NEW / DEFER) — no more exact-match-only.
         res = resolve.resolve_candidate(
             ctx.session,
-            name=ent.name,
-            type_=ent.type,
-            aliases=ent.aliases,
-            definition=ent.claims[0] if ent.claims else "",
-            context_text=" ".join(c.text for c in src_chunks),
+            name=cand.name,
+            type_=cand.type,
+            aliases=sorted(cand.aliases),
+            definition=cand.claims[0] if cand.claims else "",
+            context_text=context_text,
             comention_keys=all_keys - {key},
         )
         entity = res.entity
@@ -94,7 +171,7 @@ def run(ctx: StageContext) -> None:
                 for p in prov
             ],
         )
-        for claim_text in ent.claims:
+        for claim_text in cand.claims:
             claim = repo.insert_claim(
                 ctx.session, entity_id=entity.id, file_id=file_id, text=claim_text
             )
@@ -103,15 +180,17 @@ def run(ctx: StageContext) -> None:
         if res.decision == "DEFER":  # ambiguous — queue for human review
             repo.add_entity_review(
                 ctx.session,
-                mention_surface=ent.name,
-                mention_type=ent.type,
+                mention_surface=cand.name,
+                mention_type=cand.type,
                 file_id=file_id,
                 entity_id=entity.id,
-                payload={"definition": ent.claims[0] if ent.claims else "", "signals": res.signals},
+                payload={"definition": cand.claims[0] if cand.claims else "",
+                         "signals": res.signals},
                 llm_verdict=res.signals.get("llm"),
             )
 
     for entity_id in sorted(touched):
         repo.recompute_entity_source_count(ctx.session, entity_id)
 
-    ctx.scratch["synth_entities"] = len(entities)
+    ctx.scratch["synth_entities"] = len(cands)
+    ctx.scratch["synth_entities_failed_windows"] = failed

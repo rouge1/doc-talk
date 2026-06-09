@@ -36,7 +36,14 @@ class Settings(BaseSettings):
     # --- Model names (see PLAN.md stack table) -----------------------------
     # bge-small via fastembed (ONNX, CPU-fast, no torch) for Phase 1; swap to bge-large later.
     vlm_model: str = "llama3.2-vision"
-    chat_model: str = "gemma4:e2b"
+    chat_model: str = "qwen3.5:9b"   # 6.6 GB, fits the 8 GB wall; far better synthesis than a 2B
+    # Thinking-capable models (gemma4, qwen3.5) otherwise spend their whole generation budget on a
+    # hidden reasoning pass and return empty ``content`` (done_reason=length). We disable thinking and
+    # give the prompt real context room — see ``models.chat``. num_ctx must hold the wiki+excerpt
+    # prompt AND the answer; 4 K (Ollama's default) truncates both.
+    chat_think: bool = False
+    chat_num_ctx: int = 16384
+    chat_num_predict: int = 1500
     embed_text_model: str = "BAAI/bge-small-en-v1.5"
     # CLIP ViT-B-32 via fastembed (ONNX, no torch); matched image + text towers share a 512-d space.
     clip_image_model: str = "Qdrant/clip-ViT-B-32-vision"
@@ -66,16 +73,25 @@ class Settings(BaseSettings):
     # --- Synthesis layer (Phase 4 — the compounding wiki) ------------------
     # The synthesis LLM shares the chat model's GPU lease (no new resident model, so the 8 GB wall
     # is unchanged). None reuses ``chat_model``; set DOCTALK_SYNTH_MODEL to a stronger extractor
-    # (e.g. "llama3.1:8b"). Extraction is fed a bounded, evenly-spaced sample of the source's chunks
-    # so a huge spec stays one tractable LLM call (full map-reduce over every chunk is a later
-    # refinement). The wiki git repo lives at ``wiki_dir``.
+    # (e.g. "llama3.1:8b"). Extraction sweeps the WHOLE source in coherent, bounded windows of
+    # consecutive chunks (one LLM call each) so a large spec yields entities instead of one jumbled
+    # mega-prompt the model answers in prose. ``synth_full_sweep=False`` falls back to the old
+    # single-window evenly-spaced sample (cheap; fine for tiny sources). The wiki repo lives at
+    # ``wiki_dir``.
     synth_model: str | None = None
-    synth_max_chunks: int = 40       # representative chunks sampled per source for extraction
+    synth_full_sweep: bool = True    # window the entire document, not a 40-chunk sample
+    synth_window_chunks: int = 10    # consecutive chunks per extraction window (full-sweep mode)
+    synth_call_timeout: float = 120.0  # per-window LLM timeout; a stuck call skips its window, not the sweep
+    synth_max_claims_per_entity: int = 12  # cap claims kept per entity across the sweep
+    synth_max_chunks: int = 40       # sample size when synth_full_sweep is off
     synth_chunk_chars: int = 1200    # per-chunk char cap inside the extraction window
     # synth_integrate writes an LLM-authored lead paragraph for multi-claim entity pages (the
     # signature "authored prose"). Best-effort + bounded to entities with >=2 claims to cap LLM
     # calls; the page is valid (claims + provenance + links) even when this is off or the LLM fails.
     synth_summaries: bool = True
+    # Wiki-first chat gates authored pages on cosine relevance so off-topic pages (e.g. the recipe
+    # entities for a Bluetooth question) aren't cited just because they're the only pages that exist.
+    wiki_page_min_score: float = 0.30  # min name+definition cosine to surface a wiki page
 
     # --- Entity resolution (synth_resolve; see docs/entity-resolution.md) ---
     # Two-threshold band over a [0,1] score: confident MATCH only when high AND well-separated from

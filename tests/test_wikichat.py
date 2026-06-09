@@ -77,6 +77,40 @@ def test_retrieve_pages_filters_to_active_with_claims(db, monkeypatch):
     assert hits[0].claims[0].sources == ["a.pdf p.1"]      # provenance carried through
 
 
+def test_retrieve_pages_gates_off_topic_pages(db, monkeypatch):
+    # An off-topic wiki shouldn't be cited for an unrelated question just because it's all that exists.
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="a" * 64, path="/a", filename="a.pdf",
+                         format="pdf", mime="x", byte_size=1)
+        s.flush()
+        fid = repo.get_file_id(s, "a" * 64)
+        ch = repo.insert_chapters(s, fid, [{"level": 1, "ord": 0, "title": "Sec", "page_start": 1,
+                                            "page_end": 1, "source": "outline", "parent_ord": None}])[0]
+        repo.insert_chunks(s, fid, [{"chapter_id": ch.id, "page": 1, "ord": 0,
+                                     "char_count": 4, "text": "salt"}])
+        cid = repo.get_chunks(s, fid)[0].id
+        near = repo.create_entity(s, name="On", type_="concept", norm_key="on")
+        far = repo.create_entity(s, name="Salt", type_="component", norm_key="salt")
+        for e in (near, far):
+            c = repo.insert_claim(s, entity_id=e.id, file_id=fid, text=f"{e.name} fact.")
+            repo.insert_claim_sources(s, c.id, [{"file_id": fid, "chunk_id": cid}])
+        ids = {"near": near.id, "far": far.id}
+
+    monkeypatch.setattr(wiki, "_embed_query", lambda q: [1.0, 0.0])
+    from doctalk.vector import store
+    # near page: distance 0.5 -> score 0.5 (relevant); far page: distance 0.92 -> score 0.08 (off-topic)
+    monkeypatch.setattr(
+        store, "search_entity_names",
+        lambda qv, k, type_=None: [{"entity_id": ids["near"], "_distance": 0.5},
+                                   {"entity_id": ids["far"], "_distance": 0.92}],
+    )
+
+    hits = wiki.retrieve_pages("unrelated question", k=6)  # default gate = wiki_page_min_score (0.30)
+    assert [h.name for h in hits] == ["On"]                # the 0.08 page is gated out
+    # an explicit looser gate lets the off-topic page back in
+    assert {h.name for h in wiki.retrieve_pages("q", k=6, min_score=0.0)} == {"On", "Salt"}
+
+
 # --- orchestrator + promote ------------------------------------------------
 
 

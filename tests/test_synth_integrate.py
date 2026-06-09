@@ -42,7 +42,8 @@ _EXTRACTED = [
 
 def _populate(monkeypatch):
     """Run synth_entities (mocked extractor) then synth_integrate (LLM summary disabled)."""
-    monkeypatch.setattr(extract, "extract_entities", lambda passage, model=None: _EXTRACTED)
+    monkeypatch.setattr(extract, "extract_entities",
+                        lambda passage, model=None, timeout=None: _EXTRACTED)
     monkeypatch.setattr(synth_integrate, "_summarize", lambda name, claims, model: None)
     with session_scope() as s:
         synth_entities.run(StageContext("a" * 64, None, s))

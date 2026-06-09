@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import select
 
 from doctalk.db import repo
-from doctalk.db.models import Chapter, Chunk
+from doctalk.db.models import Chunk
 from doctalk.db.session import session_scope
 from doctalk.hashing import hash_file
 from doctalk.ingest.dag import Stage, run_dag

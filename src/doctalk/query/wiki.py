@@ -54,17 +54,29 @@ def _claim_sources(session, claim_id: int) -> list[str]:
     return sorted(out)
 
 
-def retrieve_pages(question: str, k: int = 6) -> list[PageHit]:
-    """Top-k active entity pages for the question, each with its claims + provenance."""
+def retrieve_pages(question: str, k: int = 6, *, min_score: float | None = None) -> list[PageHit]:
+    """Top-k active entity pages for the question, each with its claims + provenance.
+
+    Pages below ``min_score`` (cosine name+definition relevance; default ``wiki_page_min_score``) are
+    dropped so an off-topic wiki — e.g. only recipe entities — doesn't get cited for a question about
+    something else just because those are the only pages that exist. Falls back to ``settings``.
+    """
     qv = _embed_query(question)
     if qv is None:
         return []
+    if min_score is None:
+        from doctalk.config import get_settings
+
+        min_score = get_settings().wiki_page_min_score
     from doctalk.vector import store
 
-    raw = store.search_entity_names(qv, k * 3)  # over-fetch; we drop inactive / claimless
+    raw = store.search_entity_names(qv, k * 3)  # over-fetch; we drop inactive / claimless / off-topic
     hits: list[PageHit] = []
     with session_scope() as session:
         for row in raw:
+            score = round(1.0 - float(row.get("_distance", 0.0)), 4)
+            if score < min_score:  # off-topic page (cosine relevance below the gate)
+                continue
             entity = session.get(Entity, row["entity_id"])
             if entity is None or entity.status != "active":
                 continue
@@ -77,7 +89,7 @@ def retrieve_pages(question: str, k: int = 6) -> list[PageHit]:
                     name=entity.name,
                     type=entity.type,
                     path=entity.wiki_path,
-                    score=round(1.0 - float(row.get("_distance", 0.0)), 4),
+                    score=score,
                     claims=[PageClaim(c.text, _claim_sources(session, c.id)) for c in claims],
                 )
             )
