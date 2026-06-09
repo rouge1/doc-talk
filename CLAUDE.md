@@ -86,6 +86,10 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
 - **`overview.md` is revised, never regenerated.** Each ingest feeds the LLM the *previous* overview +
   a digest of the new source and asks for an editorial revision (`synth.overview`) — the per-ingest
   git diff shows the thesis evolving. The one page whose prior text is an input to its next version.
+- **Topic pages synthesize above the entity level.** The `synth_topics` stage writes one prose page per
+  entity-rich top-level chapter (the outline gives clustering for free), authored ONLY from member
+  entities' claims and wikilinked to them (`## Drawn from`) — provenance chains through entity pages
+  down to chunks. Slugs are file-stem-prefixed; LLM calls capped per source, skips reported.
 - **Links:** `[[wikilink]]` style (Obsidian-browsable). Maintain inbound links; orphans are a lint smell.
 - **Provenance is mandatory:** every claim links to its source chunk(s) via `claim_sources`. No
   unsupported claims (lint flags them).

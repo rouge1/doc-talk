@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from doctalk.config import get_settings
 from doctalk.ingest.dag import Stage
+from doctalk.synth.extract import prompt_fingerprint as extract_prompt_fingerprint
 from doctalk.ingest.stages import (
     cluster_image,
     docx_structure,
@@ -22,6 +23,7 @@ from doctalk.ingest.stages import (
     pdf_structure,
     synth_entities,
     synth_integrate,
+    synth_topics,
     vlm_describe,
 )
 
@@ -54,6 +56,9 @@ def _synth_entities_stage(dep: str) -> Stage:
             "chunk_chars": s.synth_chunk_chars,
             # resolution is part of this stage; an embed-model upgrade must re-block (re-resolve).
             "embed_version": s.resolve_embed_version,
+            # a prompt edit re-extracts, like a model upgrade (found live: prompt regressions
+            # otherwise hide behind a 'done' ledger row).
+            "prompt": extract_prompt_fingerprint(),
         },
         deps=(dep,),
     )
@@ -68,8 +73,29 @@ def _synth_integrate_stage() -> Stage:
         "synth_integrate",
         synth_integrate.run,
         model_version=s.synth_model or s.chat_model,
-        params={"summaries": s.synth_summaries},
+        # pages render from the claims extraction wrote — chain its prompt key so a re-extraction
+        # re-integrates (the manual cross-stage staleness idiom, like embed_version above).
+        params={"summaries": s.synth_summaries, "extract_prompt": extract_prompt_fingerprint()},
         deps=("synth_entities",),
+    )
+
+
+def _synth_topics_stage() -> Stage:
+    """Phase-4 topic pages: one prose overview per entity-rich top-level chapter. Its own ledger
+    entry so retuning topic knobs (or a model upgrade) re-runs topics without re-writing thousands
+    of entity pages. Runs after integrate so the entity pages it links to exist."""
+    s = get_settings()
+    return Stage(
+        "synth_topics",
+        synth_topics.run,
+        model_version=s.synth_model or s.chat_model,
+        params={
+            "min_entities": s.synth_topic_min_entities,
+            "max_entities": s.synth_topic_max_entities,
+            "max_pages": s.synth_topic_max_pages,
+            "extract_prompt": extract_prompt_fingerprint(),  # topic prose derives from claims too
+        },
+        deps=("synth_integrate",),
     )
 
 IMAGE_FORMATS = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
@@ -115,6 +141,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
             _link_semantic_stage("embed_text"),
             _synth_entities_stage("embed_text"),
             _synth_integrate_stage(),
+            _synth_topics_stage(),
         ]
     elif file_format == "docx":
         stages += [
@@ -134,6 +161,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
             _link_semantic_stage("embed_text"),
             _synth_entities_stage("embed_text"),
             _synth_integrate_stage(),
+            _synth_topics_stage(),
         ]
     elif file_format in IMAGE_FORMATS:
         stages += [

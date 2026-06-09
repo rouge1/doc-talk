@@ -155,6 +155,20 @@ def run(ctx: StageContext) -> None:
 
     skipped = _drop_low_salience(ctx.session, cands, n_windows=len(windows), settings=s)
 
+    # An empty sweep must never wipe an established synthesis: zero candidates alongside failed
+    # windows (or prior mentions for this file) means the model/extraction regressed, not the
+    # source — fail the stage (ledger records error, downstream stops) instead of clearing.
+    if not cands:
+        if failed or repo.get_mentions_for_file(ctx.session, file_id):
+            raise RuntimeError(
+                f"synth_entities: sweep produced no entities ({failed} failed window(s)); "
+                "refusing to clear prior synthesis"
+            )
+        ctx.scratch["synth_entities"] = 0
+        ctx.scratch["synth_entities_failed_windows"] = failed
+        ctx.scratch["synth_entities_low_salience"] = skipped
+        return  # legitimately empty source (nothing prior to preserve)
+
     touched = set(repo.clear_synth_for_file(ctx.session, file_id))  # idempotent re-synth
     all_keys = set(cands)  # co-extracted entities co-mention each other (resolver signal)
 

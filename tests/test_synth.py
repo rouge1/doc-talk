@@ -380,6 +380,37 @@ def test_salience_skipped_on_small_documents(db, monkeypatch, stub_resolve):
         assert "Noise" in {e.name for e in repo.get_entities(s)}
 
 
+def test_empty_sweep_refuses_to_wipe_prior_synthesis(db, monkeypatch, stub_resolve):
+    # Found live: a re-synth whose sweep extracts nothing (model regression / all windows failed)
+    # used to clear the file's prior claims+mentions and get marked done. It must fail instead.
+    import pytest
+
+    with session_scope() as s:
+        _doc(s)
+    _run(monkeypatch)  # establish a real synthesis first
+
+    monkeypatch.setattr(extract, "extract_entities",
+                        lambda passage, model=None, timeout=None: [])
+    with session_scope() as s:
+        with pytest.raises(RuntimeError, match="refusing to clear"):
+            synth_entities.run(StageContext("a" * 64, None, s))
+
+    with session_scope() as s:  # prior synthesis intact
+        fid = repo.get_file_id(s, "a" * 64)
+        assert len(repo.get_mentions_for_file(s, fid)) == 3
+
+
+def test_empty_sweep_on_fresh_source_is_benign(db, monkeypatch, stub_resolve):
+    with session_scope() as s:
+        _doc(s)
+    monkeypatch.setattr(extract, "extract_entities",
+                        lambda passage, model=None, timeout=None: [])
+    with session_scope() as s:
+        ctx = StageContext("a" * 64, None, s)
+        synth_entities.run(ctx)  # nothing prior, no failures -> no raise
+        assert ctx.scratch["synth_entities"] == 0
+
+
 def test_sample_chunks_is_evenly_spaced():
     items = list(range(100))
     sample = synth_entities._sample_chunks(items, 10)

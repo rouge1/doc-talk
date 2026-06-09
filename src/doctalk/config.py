@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     # After each ingest, the LLM revises overview.md (previous text is an input — the "evolving
     # thesis"; see synth.overview). Best-effort: a missing model leaves the page untouched.
     synth_overview: bool = True
+    # Topic pages (synth_topics stage): one LLM-authored overview per entity-rich top-level
+    # chapter, written only from member entities' claims and wikilinked to them. Calls are capped
+    # per source (busiest chapters first; the skip count is reported, never silent).
+    synth_topics: bool = True
+    synth_topic_min_entities: int = 5   # chapters with fewer member entities get no topic page
+    synth_topic_max_entities: int = 15  # entities (one claim each) fed to a topic prompt
+    synth_topic_max_pages: int = 30     # LLM-call cap per source
     # Wiki-first chat gates authored pages on cosine relevance so off-topic pages (e.g. the recipe
     # entities for a Bluetooth question) aren't cited just because they're the only pages that exist.
     wiki_page_min_score: float = 0.30  # min name+definition cosine to surface a wiki page

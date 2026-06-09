@@ -105,7 +105,14 @@ def render_index(session) -> str:
         listed += 1
     if not listed:
         out.append("_None yet._")
-    out += ["", "## Concepts", "", "_None yet._", "", "## Topics", "", "_None yet._"]
+    out += ["", "## Concepts", "", "_None yet._", "", "## Topics", ""]
+    topics = repo.get_wiki_pages_by_kind(session, "topic")
+    if topics:
+        for p in topics:
+            stem = p.path.rsplit("/", 1)[-1].removesuffix(".md")
+            out.append(f"- [[{stem}|{p.title}]]")
+    else:
+        out.append("_None yet._")
 
     queries = repo.get_wiki_pages_by_kind(session, "query")
     out += ["", "## Queries", ""]

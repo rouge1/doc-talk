@@ -23,14 +23,17 @@ from doctalk.synth.gate import is_pageworthy
 # unrecognized type falls back to the catch-all "concept" rather than spawning a junk type.
 ENTITY_TYPES = {"concept", "component", "protocol", "person", "organization", "product", "standard"}
 
+# NB: exclusions are phrased carefully — an earlier "Do NOT extract data values: 0x0009, 100 ms…"
+# list made the model treat non-technical passages (a recipe) as having no entities at all. The
+# domain-neutral framing up front is load-bearing; verify against BOTH corpora when editing.
 _SYSTEM = (
-    "You are a precise knowledge-extraction component for a local wiki. Given a passage, extract "
+    "You are a precise knowledge-extraction component for a local wiki. Passages come from any "
+    "domain — technical specs, recipes, letters, articles — and all domains have entities. Extract "
     "the salient named entities (concepts, components, protocols, people, organizations, products, "
     "standards) and, for each, a few short factual claims stated IN the passage. Use only "
-    "information present in the passage — never invent facts. Extract only subjects a reader would "
-    "want a reference page about. Do NOT extract data values: numeric or hexadecimal literals "
-    "(0x0009, 350, 3.5), measurements or units (100 ms, 2.4 GHz), parameter/field values, or the "
-    "document's own section/table/figure numbers (Section 2.3, Table 5). Respond with JSON only."
+    "information present in the passage — never invent facts. Data values are not entities "
+    "(numbers, hex codes, measurements, section/table references); the subjects they describe are "
+    "— 'salt', not '½ tsp'; 'connection interval', not '7.5 ms'. Respond with JSON only."
 )
 
 _SCHEMA_HINT = (
@@ -41,6 +44,14 @@ _SCHEMA_HINT = (
 )
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+
+
+def prompt_fingerprint() -> str:
+    """Short stable hash of the extraction prompt — part of the synth stages' ledger keys, so a
+    prompt edit re-runs extraction (and downstream page/topic rendering) like a model upgrade."""
+    from doctalk.hashing import hash_bytes
+
+    return hash_bytes(f"{_SYSTEM}\n{_SCHEMA_HINT}".encode())[:12]
 
 
 def _json_blob(text: str) -> str | None:
