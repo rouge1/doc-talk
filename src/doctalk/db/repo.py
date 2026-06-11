@@ -355,6 +355,29 @@ def find_entity_by_norm_key(session: Session, norm_key: str, type_: str) -> Enti
     )
 
 
+def find_entity_by_name_type(session: Session, name: str, type_: str) -> Entity | None:
+    """Exact ``(name, type)`` row — the UNIQUE constraint's view of identity. Equality semantics
+    follow the DB collation (case-sensitive on SQLite, usually not on MySQL), exactly like the
+    constraint itself, so a hit here is precisely 'creating this would violate UNIQUE'."""
+    return session.scalar(select(Entity).where(Entity.name == name, Entity.type == type_))
+
+
+def follow_merges(session: Session, entity: Entity) -> Entity:
+    """Resolve a merged-away entity to its surviving target (bounded; cycles can't happen but the
+    guard costs nothing). A non-merged entity returns itself."""
+    seen: set[int] = set()
+    while entity.status == "merged_into" and entity.id not in seen:
+        seen.add(entity.id)
+        merge = session.scalar(
+            select(EntityMerge).where(EntityMerge.from_id == entity.id).order_by(EntityMerge.id.desc())
+        )
+        target = session.get(Entity, merge.into_id) if merge is not None else None
+        if target is None:  # pragma: no cover - merged status without a merge row (defensive)
+            break
+        entity = target
+    return entity
+
+
 def get_or_create_entity(
     session: Session, *, name: str, type_: str, norm_key: str, aliases: list[str] | None = None
 ) -> Entity:

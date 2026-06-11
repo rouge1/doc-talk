@@ -159,11 +159,28 @@ def _store_vector(session, entity_id: int, type_: str, vec: list[float] | None) 
 
 
 def _apply_match(session, entity: Entity, surfaces, score, sig) -> Resolution:
+    if entity.status == "pruned":  # a fresh mention re-admits a pruned entity (gate evolution)
+        repo.set_entity_status(session, entity.id, "active")
     repo.add_entity_aliases(session, entity.id, surfaces)
     return Resolution(entity=entity, decision="MATCH", score=score, signals=sig)
 
 
+def _existing_identity(session, name: str, type_: str) -> Entity | None:
+    """The entity a create would UNIQUE-collide with, canonicalized. ``(name, type)`` IS identity
+    per the schema, so a scored-low or LLM-"different" verdict cannot mint a duplicate — exact
+    same-name re-extractions (the re-drop case) MATCH instead. Merged-away rows keep their name and
+    still occupy the constraint, so follow the merge to the survivor; a pruned row whose name the
+    gate now passes is reactivated (gate evolution re-admits it). Genuine polysemy under one
+    name+type (salt the seasoning vs SALT the value) can't be two rows anyway — that's wiki-split's
+    job, not a duplicate insert."""
+    existing = repo.find_entity_by_name_type(session, name, type_)
+    return repo.follow_merges(session, existing) if existing is not None else None
+
+
 def _apply_new(session, name, type_, nk, aliases, acronyms, vec, sig) -> Resolution:
+    existing = _existing_identity(session, name, type_)
+    if existing is not None:
+        return _apply_match(session, existing, [name, *aliases], 1.0, {**sig, "exact_name": True})
     entity = repo.create_entity(
         session, name=name, type_=type_, norm_key=nk, aliases=aliases, acronyms=acronyms
     )
@@ -187,6 +204,13 @@ def _apply_defer(session, *, name, type_, nk, aliases, acronyms, definition, men
                           {**(top[0][1] if top else {}), "llm": "different"})
 
     # can't-tell / no LLM -> provisionally NEW tagged #unresolved + queue for a human
+    existing = _existing_identity(session, name, type_)
+    if existing is not None:  # same (name, type) already canonical — ambiguity is moot
+        return _apply_match(
+            session, existing, [name, *aliases],
+            top[0][0] if top else 0.0,
+            {**(top[0][1] if top else {}), "llm": verdict or "skipped", "exact_name": True},
+        )
     entity = repo.create_entity(
         session, name=name, type_=type_, norm_key=nk, aliases=aliases, acronyms=acronyms,
         status="unresolved",

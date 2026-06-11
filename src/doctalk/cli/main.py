@@ -339,8 +339,9 @@ def wiki_audit() -> None:
 def wiki_prune(
     dry_run: bool = typer.Option(False, "--dry-run", help="list what would be pruned; change nothing"),
 ) -> None:
-    """Drop noise entities that predate the extraction gate (numeric/hex literals, measurements,
-    document self-references): status -> 'pruned' (reversible), page + catalog row + name vector
+    """Drop noise entities (gate-failing names: numeric/hex literals, measurements, document
+    self-references) and unattested ones (no claims/mentions after a re-synthesis): status ->
+    'pruned' (reversible — a future mention reactivates), page + catalog row + name vector
     removed, index regenerated, one git commit."""
     from doctalk.config import get_settings
     from doctalk.db.models import utcnow
@@ -349,15 +350,19 @@ def wiki_prune(
     wiki_dir = get_settings().wiki_dir
     if dry_run:
         with session_scope() as session:
-            names = [e.name for e in prune.junk_entities(session)]
-        if not names:
+            junk = [e.name for e in prune.junk_entities(session)]
+            orphans = [e.name for e in prune.orphan_entities(session)]
+        if not junk and not orphans:
             typer.echo("wiki-prune: nothing to prune ✓")
             return
-        for name in names[:40]:
-            typer.echo(f"  - {name!r}")
-        if len(names) > 40:
-            typer.echo(f"  … and {len(names) - 40} more")
-        typer.echo(f"would prune {len(names)} entit(ies); run without --dry-run to apply")
+        for label, names in (("gate-failing", junk), ("unattested", orphans)):
+            if names:
+                typer.echo(f"{label} ({len(names)}):")
+                for name in names[:20]:
+                    typer.echo(f"  - {name!r}")
+                if len(names) > 20:
+                    typer.echo(f"  … and {len(names) - 20} more")
+        typer.echo(f"would prune {len(junk) + len(orphans)} entit(ies); run without --dry-run to apply")
         return
 
     with session_scope() as session:

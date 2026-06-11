@@ -75,6 +75,47 @@ def test_thin_margin_between_two_strong_candidates_defers(db, stub_resolve):
         assert r.decision == "DEFER" and r.entity.status == "unresolved"
 
 
+# --- (name, type) is identity: the create-collision guard -------------------
+
+
+def test_exact_name_in_defer_band_matches_instead_of_minting(db, stub_resolve):
+    # The re-drop crash: an entity with no stored name vector scores ~0.50 (alias + lexical only)
+    # -> DEFER band -> the can't-tell path used to create_entity straight into a UNIQUE(name, type)
+    # violation. (name, type) is identity: it must MATCH the existing row.
+    with session_scope() as s:
+        eid = repo.create_entity(s, name="Alpha Widget", type_="component",
+                                 norm_key="alpha widget").id
+    with session_scope() as s:
+        r = _resolve(s, "Alpha Widget")
+        assert r.decision == "MATCH" and r.entity.id == eid
+        assert r.signals.get("exact_name") is True
+        assert len(repo.get_entities(s)) == 1              # no duplicate row
+
+
+def test_exact_name_follows_merge_to_survivor(db, stub_resolve):
+    # Merged-away rows keep their name and still occupy the UNIQUE constraint — re-extracting the
+    # merged name must land on the survivor, not crash on the redirect stub.
+    with session_scope() as s:
+        src = repo.create_entity(s, name="Batter", type_="component", norm_key="batter")
+        dst = repo.create_entity(s, name="Cake", type_="component", norm_key="cake")
+        repo.merge_entities(s, src.id, dst.id, reason="test")
+        dst_id = dst.id
+    with session_scope() as s:
+        r = _resolve(s, "Batter")
+        assert r.decision == "MATCH" and r.entity.id == dst_id
+
+
+def test_exact_name_reactivates_pruned_entity(db, stub_resolve):
+    # A same-name row pruned under an older gate is re-admitted when the gate passes it today.
+    with session_scope() as s:
+        pid = repo.create_entity(s, name="Alpha Widget", type_="component",
+                                 norm_key="alpha widget", status="pruned").id
+    with session_scope() as s:
+        r = _resolve(s, "Alpha Widget")
+        assert r.decision == "MATCH" and r.entity.id == pid
+        assert r.entity.status == "active"                 # reactivated
+
+
 # --- the recovery half -----------------------------------------------------
 
 

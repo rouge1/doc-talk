@@ -124,6 +124,17 @@ def _contradictions(session) -> list[Finding]:
     ]
 
 
+def _unattested(session) -> list[Finding]:
+    """Active entities with no claims and no mentions (left behind by a re-synthesis) — their
+    pages render claims the truth store no longer holds. One summary finding; wiki-prune reaps."""
+    from doctalk.synth.prune import orphan_entities
+
+    n = len(orphan_entities(session))
+    if not n:
+        return []
+    return [Finding("unattested", f"{n} active entit(ies) with no claims/mentions — run wiki-prune")]
+
+
 def _stale_queries(session, wiki_dir: Path) -> list[Finding]:
     """Filed query answers whose cited entity pages gained claims after filing — the answer may no
     longer reflect the corpus; re-ask to refresh (the re-ask appends a dated Update snapshot)."""
@@ -156,6 +167,7 @@ def lint(session, wiki_dir: Path) -> list[Finding]:
         *_missing_pages(session),
         *_duplicate_candidates(session),
         *_contradictions(session),
+        *_unattested(session),
         *_stale_queries(session, wiki_dir),
     ]
 

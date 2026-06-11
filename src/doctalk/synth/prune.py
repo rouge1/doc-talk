@@ -29,11 +29,33 @@ def junk_entities(session) -> list[Entity]:
     return [e for e in rows if not is_pageworthy(e.name, e.type)]
 
 
+def orphan_entities(session) -> list[Entity]:
+    """Active entities no source attests anymore — no claims, no mentions. A re-synthesis clears a
+    file's claims/mentions and re-resolves what it extracts *now*; entities the new sweep didn't
+    re-extract stay behind as zero-attestation rows whose pages render claims the truth store no
+    longer holds. Reaping is reversible: a future mention reactivates them (resolve._apply_match)."""
+    from sqlalchemy import exists
+
+    from doctalk.db.models import Claim, Mention
+
+    has_claim = exists().where(Claim.entity_id == Entity.id)
+    has_mention = exists().where(Mention.entity_id == Entity.id)
+    return list(
+        session.scalars(
+            select(Entity).where(Entity.status == "active", ~has_claim, ~has_mention)
+        )
+    )
+
+
 def prune(session, wiki_dir: Path) -> list[str]:
-    """Prune every gate-failing entity: status -> ``pruned``, page file + catalog row + name vector
-    removed. Returns the pruned names; the caller regenerates the index, logs, and commits."""
+    """Prune gate-failing + unattested entities: status -> ``pruned``, page file + catalog row +
+    name vector removed. Returns the pruned names; the caller regenerates index, logs, commits."""
     pruned: list[str] = []
-    for entity in junk_entities(session):
+    seen: set[int] = set()  # a gate-failing entity with no attestation qualifies on both counts
+    for entity in (*junk_entities(session), *orphan_entities(session)):
+        if entity.id in seen:
+            continue
+        seen.add(entity.id)
         if entity.wiki_path:
             (wiki_dir / entity.wiki_path).unlink(missing_ok=True)
             repo.delete_wiki_page(session, entity.wiki_path)

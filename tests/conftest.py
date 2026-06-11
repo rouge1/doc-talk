@@ -23,10 +23,15 @@ def db(tmp_path, monkeypatch):
 
     get_settings.cache_clear()
     session_mod.reset_engine()
+    from doctalk.vector import store as vstore
+
+    vstore.reset_db_cache()  # the lancedb connection is cached; without this, vectors stored by an
+    # earlier test leak into this test's (re-used) entity ids and skew resolver scores
 
     Base.metadata.create_all(session_mod.get_engine())
     yield
     session_mod.reset_engine()
+    vstore.reset_db_cache()
     get_settings.cache_clear()
 
 
