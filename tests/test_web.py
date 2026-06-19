@@ -90,6 +90,34 @@ def test_wiki_index_lists_entities_and_page_renders(client):
     assert 'class="wiki-title">Cake</h1>' in page.text and "Bake 30 min." in page.text
 
 
+def test_wiki_index_lists_sources_and_topics(client):
+    # the catalog front door must surface the rungs above entities (document profiles + topics),
+    # each clickable through to its /wiki/page render.
+    from doctalk.db import repo
+    from doctalk.db.session import session_scope
+
+    with session_scope() as s:
+        repo.upsert_wiki_page(s, path="sources/spec-v1.md", title="Spec v1.pdf",
+                              kind="source", entity_id=None)
+        repo.upsert_wiki_page(s, path="topics/spec-v1--security.md", title="Security",
+                              kind="topic", entity_id=None)
+    r = client.get("/wiki")
+    assert r.status_code == 200
+    assert "sources · 1" in r.text and 'href="/wiki/page/spec-v1"' in r.text
+    assert "topics · 1" in r.text and 'href="/wiki/page/spec-v1--security"' in r.text
+
+
+def test_wiki_page_renders_source_kind(client):
+    # synth_source writes sources/<stem>.md; the page route must resolve that kind (regression:
+    # the kinds map originally omitted "sources", so source profiles 404'd in the viewer).
+    from doctalk.synth import wikirepo
+
+    wikirepo.write_page("sources/spec-v1.md", "# Spec v1.pdf\n\n> **source** · pdf\n")
+    page = client.get("/wiki/page/spec-v1")
+    assert page.status_code == 200
+    assert 'class="wiki-title">Spec v1.pdf</h1>' in page.text
+
+
 def test_wiki_page_missing_is_404(client):
     assert client.get("/wiki/page/nonexistent").status_code == 404
 

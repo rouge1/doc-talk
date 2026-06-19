@@ -53,6 +53,23 @@
     .wiki-stats b { display:block; font-family:Georgia,serif; font-size:1.5rem; line-height:1;
                  color:var(--wiki-accent); font-variant-numeric:tabular-nums; }
     .wiki-stats span { font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+    /* source = the top rung of the synthesis ladder, so it carries real metadata, not just a link */
+    .source-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:.8rem; }
+    .source-card { display:block; text-decoration:none; color:var(--wiki-ink); background:var(--wiki-paper);
+                 border:1px solid var(--line); border-radius:12px; padding:.85rem 1rem;
+                 transition:border-color .15s, box-shadow .15s; }
+    .source-card:hover { border-color:var(--wiki-accent); box-shadow:0 1px 0 #f0ebe2; }
+    .source-card-head { display:flex; align-items:baseline; gap:.5rem; }
+    .source-name { font-family:Georgia,Palatino,serif; font-size:1.12rem; line-height:1.2; color:var(--wiki-ink); }
+    .source-card:hover .source-name { text-decoration:underline; }
+    .source-fmt { margin-left:auto; font-size:.62rem; text-transform:uppercase; letter-spacing:.1em;
+                 color:var(--wiki-accent); border:1px solid #e7d6bf; border-radius:999px; padding:.1rem .45rem; }
+    .source-stats { display:flex; gap:1.5rem; margin:.75rem 0 0; }
+    .source-stats dt { font-family:Georgia,serif; font-size:1.18rem; line-height:1; color:var(--wiki-accent);
+                 font-variant-numeric:tabular-nums; }
+    .source-stats dd { margin:.12rem 0 0; font-size:.63rem; text-transform:uppercase; letter-spacing:.09em;
+                 color:var(--muted); }
+    .source-date { margin:.6rem 0 0; font-size:.72rem; color:var(--muted); }
     .type-group { margin-top:1.7rem; }
     .type-head { font-family:Georgia,serif; font-size:.74rem; text-transform:uppercase; letter-spacing:.13em;
                  color:var(--wiki-accent); font-weight:700; border-bottom:1px solid var(--line);

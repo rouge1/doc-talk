@@ -6,14 +6,38 @@
     <p class="lede">An LLM-authored, compounding knowledge base — entities and claims distilled from
       your documents, interlinked and traced back to their sources.</p>
     <div class="wiki-stats">
-      <div><b>{{ totals.entities }}</b><span>entities</span></div>
-      <div><b>{{ totals.claims }}</b><span>claims</span></div>
-      <div><b>{{ totals.queries }}</b><span>queries</span></div>
+      <div><b>{{ totals.entities }}</b><span>{{ "entity" if totals.entities == 1 else "entities" }}</span></div>
+      <div><b>{{ totals.claims }}</b><span>{{ "claim" if totals.claims == 1 else "claims" }}</span></div>
+      <div><b>{{ totals.queries }}</b><span>{{ "query" if totals.queries == 1 else "queries" }}</span></div>
     </div>
     {% if reviews %}
       <a class="review-banner" href="/wiki/review">⚖ {{ reviews }} resolution{{ "s" if reviews != 1 }} to review</a>
     {% endif %}
   </div>
+
+  {% if sources %}
+    <section class="type-group">
+      <h2 class="type-head">sources · {{ sources|length }}</h2>
+      <div class="source-cards">
+        {% for sdoc in sources %}
+          <a class="source-card" href="/wiki/page/{{ sdoc.stem }}">
+            <div class="source-card-head">
+              <span class="source-name">{{ sdoc.title }}</span>
+              {% if sdoc.format %}<span class="source-fmt">{{ sdoc.format }}</span>{% endif %}
+            </div>
+            {% if 'entities' in sdoc %}
+              <dl class="source-stats">
+                <div><dt>{{ sdoc.chapters }}</dt><dd>chapters</dd></div>
+                <div><dt>{{ sdoc.entities }}</dt><dd>entities</dd></div>
+                <div><dt>{{ sdoc.claims }}</dt><dd>claims</dd></div>
+              </dl>
+              {% if sdoc.ingested %}<p class="source-date">ingested {{ sdoc.ingested }}</p>{% endif %}
+            {% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
 
   {% if groups %}
     {% for type, items in groups %}
@@ -33,6 +57,17 @@
   {% else %}
     <p class="muted" style="margin-top:1.5rem">No entities synthesized yet. Ingest a document, then run
       <code>doctalk wiki-init</code> — synthesis fills this in.</p>
+  {% endif %}
+
+  {% if topics %}
+    <section class="type-group">
+      <h2 class="type-head">topics · {{ topics|length }}</h2>
+      <ul class="entity-list">
+        {% for t in topics %}
+          <li><a href="/wiki/page/{{ t.stem }}">{{ t.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </section>
   {% endif %}
 
   {% if queries %}

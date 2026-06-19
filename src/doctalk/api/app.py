@@ -200,6 +200,27 @@ def wiki_index(request: Request):
             {"title": p.title, "stem": Path(p.path).stem}
             for p in repo.get_wiki_pages_by_kind(s, "query")
         ]
+        # the synthesis rungs above the entity level — document profiles and chapter topics.
+        # A source is the top rung, so its catalog entry carries the real metadata (the File it
+        # was synthesized from), not just a link.
+        sources = []
+        for p in repo.get_wiki_pages_by_kind(s, "source"):
+            card: dict[str, object] = {"title": p.title, "stem": Path(p.path).stem}
+            f = repo.get_file_by_filename(s, p.title)
+            if f is not None:
+                chapters = repo.get_chapters(s, f.id)
+                card.update(
+                    format=f.format,
+                    chapters=sum(1 for c in chapters if c.parent_id is None),
+                    entities=len(repo.get_entity_ids_for_file(s, f.id)),
+                    claims=repo.count_claims_for_file(s, f.id),
+                    ingested=f.created_at.strftime("%b %-d, %Y") if f.created_at else None,
+                )
+            sources.append(card)
+        topics = [
+            {"title": p.title, "stem": Path(p.path).stem}
+            for p in repo.get_wiki_pages_by_kind(s, "topic")
+        ]
         reviews = len(repo.get_open_reviews(s))
     n_entities = sum(len(v) for v in groups.values())
     ordered = sorted(groups.items())  # types alphabetical; entities sorted within
@@ -207,7 +228,8 @@ def wiki_index(request: Request):
         items.sort(key=lambda it: it["name"].lower())
     return templates.TemplateResponse(
         request, "wiki_index.html",
-        {"groups": ordered, "queries": queries, "reviews": reviews,
+        {"groups": ordered, "queries": queries, "sources": sources, "topics": topics,
+         "reviews": reviews,
          "totals": {"entities": n_entities, "claims": n_claims, "queries": len(queries)}},
     )
 
@@ -232,7 +254,8 @@ def wiki_page(request: Request, stem: str):
     from doctalk.config import get_settings
     from doctalk.api.wikimd import render
 
-    kinds = {"entities": "entity", "queries": "query", "concepts": "concept", "topics": "topic"}
+    kinds = {"entities": "entity", "queries": "query", "concepts": "concept",
+             "topics": "topic", "sources": "source"}
     wiki_dir = get_settings().wiki_dir
     for sub, label in kinds.items():
         path = wiki_dir / sub / f"{stem}.md"

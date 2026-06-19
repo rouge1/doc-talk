@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     synth_topic_min_entities: int = 5   # chapters with fewer member entities get no topic page
     synth_topic_max_entities: int = 15  # entities (one claim each) fed to a topic prompt
     synth_topic_max_pages: int = 30     # LLM-call cap per source
+    # Source profile pages (synth_source stage): one page per document — the rung between the
+    # corpus overview and per-chapter topics. One LLM call per source (the lead paragraph),
+    # best-effort; the structural sections (contents, key entities, topics) are pure DB reads.
+    synth_sources: bool = True
+    synth_source_max_entities: int = 15  # key entities listed + fed to the lead-paragraph prompt
+    synth_source_max_chapters: int = 40  # contents-list cap (covered chapters; never silent)
     # Wiki-first chat gates authored pages on cosine relevance so off-topic pages (e.g. the recipe
     # entities for a Bluetooth question) aren't cited just because they're the only pages that exist.
     wiki_page_min_score: float = 0.30  # min name+definition cosine to surface a wiki page

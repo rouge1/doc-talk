@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import Library from "./routes/Library";
 import Wiki from "./routes/Wiki";
 import Entity from "./routes/Entity";
+import Source from "./routes/Source";
 import Query from "./routes/Query";
 import Search from "./routes/Search";
 import Chat from "./routes/Chat";
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/wiki" element={<Wiki />} />
+          <Route path="/wiki/source/:stem" element={<Source />} />
           <Route path="/wiki/entity/:stem" element={<Entity />} />
           <Route path="/wiki/query/:stem" element={<Query />} />
           <Route path="/doc/:hash" element={<Doc />} />

@@ -17,9 +17,34 @@ export interface Doc {
   chunks: number;
 }
 
+export interface SourceCard {
+  title: string;
+  stem: string;
+  format: string;
+  chapters: number;
+  entities: number;
+  claims: number;
+  ingested: string | null;
+}
+
 export interface Library {
   documents: Doc[];
   images: number;
+  sources: SourceCard[];
+}
+
+export interface SourceProfile {
+  title: string;
+  hash: string;
+  format: string;
+  size: string;
+  chapters: number;
+  entities: number;
+  claims: number;
+  ingested: string | null;
+  lead: string; // rendered HTML (entity wikilinks)
+  contents: { title: string; chapter_id: number; entities: number }[];
+  key_entities: { name: string; stem: string | null }[];
 }
 
 export interface EntityRef {
@@ -206,6 +231,7 @@ export const api = {
   wiki: () => get<WikiIndex>("/api/wiki"),
   jobs: () => get<JobsData>("/api/jobs"),
   entity: (stem: string) => get<Entity>(`/api/wiki/entity/${stem}`),
+  source: (stem: string) => get<SourceProfile>(`/api/wiki/source/${stem}`),
   query: (stem: string) => get<QueryPage>(`/api/wiki/query/${stem}`),
   search: (q: string, mode: SearchMode = "hybrid") =>
     get<SearchResult>(`/api/search?q=${encodeURIComponent(q)}&mode=${mode}`),

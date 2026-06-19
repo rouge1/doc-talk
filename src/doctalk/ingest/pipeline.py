@@ -23,6 +23,7 @@ from doctalk.ingest.stages import (
     pdf_structure,
     synth_entities,
     synth_integrate,
+    synth_source,
     synth_topics,
     vlm_describe,
 )
@@ -98,6 +99,24 @@ def _synth_topics_stage() -> Stage:
         deps=("synth_integrate",),
     )
 
+
+def _synth_source_stage() -> Stage:
+    """Phase-4 source profile: one page per document, linking its chapter topics + key entities.
+    Runs after topics so the topic/entity pages its Contents/Key-entities sections link already
+    exist. Keyed by the synth model + its knobs (own ledger entry, like topics)."""
+    s = get_settings()
+    return Stage(
+        "synth_source",
+        synth_source.run,
+        model_version=s.synth_model or s.chat_model,
+        params={
+            "max_entities": s.synth_source_max_entities,
+            "max_chapters": s.synth_source_max_chapters,
+            "extract_prompt": extract_prompt_fingerprint(),  # lead paragraph derives from claims
+        },
+        deps=("synth_topics",),
+    )
+
 IMAGE_FORMATS = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
 
 
@@ -142,6 +161,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
             _synth_entities_stage("embed_text"),
             _synth_integrate_stage(),
             _synth_topics_stage(),
+            _synth_source_stage(),
         ]
     elif file_format == "docx":
         stages += [
@@ -162,6 +182,7 @@ def pipeline_for(file_format: str) -> list[Stage]:
             _synth_entities_stage("embed_text"),
             _synth_integrate_stage(),
             _synth_topics_stage(),
+            _synth_source_stage(),
         ]
     elif file_format in IMAGE_FORMATS:
         stages += [

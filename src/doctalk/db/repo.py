@@ -44,6 +44,14 @@ def get_file_id(session: Session, content_hash: str) -> int | None:
     return session.scalar(select(File.id).where(File.content_hash == content_hash))
 
 
+def get_file_by_filename(session: Session, filename: str) -> File | None:
+    """Most recently ingested file with this name. Source wiki pages title by filename, so the
+    catalog joins back to the File for stats; same-name files are rare and the newest wins."""
+    return session.scalar(
+        select(File).where(File.filename == filename).order_by(File.id.desc())
+    )
+
+
 def upsert_file(
     session: Session,
     *,
@@ -470,6 +478,13 @@ def count_claims_by_entity(session: Session, entity_ids: list[int]) -> dict[int,
         .group_by(Claim.entity_id)
     ).all()
     return {eid: n for eid, n in rows}
+
+
+def count_claims_for_file(session: Session, file_id: int) -> int:
+    """Claims this source contributed (a source-card stat)."""
+    return session.scalar(
+        select(func.count()).select_from(Claim).where(Claim.file_id == file_id)
+    ) or 0
 
 
 def get_claims_for_entity(session: Session, entity_id: int) -> list[Claim]:

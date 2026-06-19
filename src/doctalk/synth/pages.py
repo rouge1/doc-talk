@@ -91,9 +91,17 @@ def render_index(session) -> str:
         "",
         "The content catalog for this knowledge base. Updated every ingest.",
         "",
-        "## Entities",
+        "## Sources",
         "",
     ]
+    sources = repo.get_wiki_pages_by_kind(session, "source")
+    if sources:
+        for p in sources:
+            stem = p.path.rsplit("/", 1)[-1].removesuffix(".md")
+            out.append(f"- [[{stem}|{p.title}]]")
+    else:
+        out.append("_None yet._")
+    out += ["", "## Entities", ""]
     listed = 0
     for p in pages:
         if p.entity_id is not None:  # skip entities merged away (their page is a redirect stub)

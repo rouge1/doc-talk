@@ -111,6 +111,19 @@ def test_linkify_links_first_plain_occurrence_only():
     assert synth_topics._linkify(prose, [("salt", "salt")]).count("[[salt|salt]]") == 1
 
 
+def test_linkify_repairs_model_bracket_slips():
+    """Live with qwen3.5: names ending in a paren get a one-bracket link, and some links omit the
+    display half. linkify strips the model's markup and re-links deterministically, so both heal."""
+    refs = [("lmp", "Link Manager protocol (LMP)"), ("sssm", "Sounding sequence marker signal")]
+    # malformed single-bracket link (name ends in a paren) -> repaired to a well-formed [[..]]
+    out = synth_topics._linkify("The [[lmp|Link Manager protocol (LMP)], covered later.", refs)
+    assert "[[lmp|Link Manager protocol (LMP)]]" in out
+    assert "(LMP)]," not in out                                 # the broken single bracket is gone
+    # slug-only link (no display) -> re-expanded to the proper [[slug|Name]]
+    out2 = synth_topics._linkify("See [[sssm]] for details.", refs)
+    assert "[[sssm|Sounding sequence marker signal]]" in out2
+
+
 def test_failed_call_skips_topic_not_stage(db, monkeypatch):
     monkeypatch.setenv("DOCTALK_SYNTH_TOPIC_MIN_ENTITIES", "2")
     get_settings.cache_clear()

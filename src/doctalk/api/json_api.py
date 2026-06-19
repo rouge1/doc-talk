@@ -32,6 +32,57 @@ def _count(s, model, *where) -> int:
     return s.scalar(q) or 0
 
 
+def _human_size(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
+def _source_cards(s) -> list[dict]:
+    """Synthesis source profiles for the catalog — one per ``source`` wiki page, carrying the File's
+    real metadata (the same stats the profile page reports; entities = full contribution)."""
+    out = []
+    for p in repo.get_wiki_pages_by_kind(s, "source"):
+        f = repo.get_file_by_filename(s, p.title)
+        if f is None:
+            continue
+        chapters = repo.get_chapters(s, f.id)
+        out.append({
+            "title": p.title,
+            "stem": Path(p.path).stem,
+            "format": f.format,
+            "chapters": sum(1 for c in chapters if c.parent_id is None),
+            "entities": len(repo.get_entity_ids_for_file(s, f.id)),
+            "claims": repo.count_claims_for_file(s, f.id),
+            "ingested": f.created_at.date().isoformat() if f.created_at else None,
+        })
+    return out
+
+
+def _source_lead_html(stem: str) -> str:
+    """The authored lead paragraph of a source profile, rendered to HTML. The prose lives only in
+    the markdown (not the DB), so we read it back; its wikilinks point at entity pages."""
+    from doctalk.config import get_settings
+
+    path = get_settings().wiki_dir / "sources" / f"{stem}.md"
+    if not path.is_file():
+        return ""
+    started, lead = False, []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        st = line.strip()
+        if not started:
+            if not st or st.startswith(("# ", "> ")):
+                continue  # skip the title + meta blockquote
+            started = True
+        if not st or st.startswith(("## ", "---")):
+            break  # end of the lead paragraph
+        lead.append(line)
+    return str(render("\n".join(lead))) if lead else ""
+
+
 @router.get("/stats")
 def stats() -> dict:
     with session_scope() as s:
@@ -107,7 +158,8 @@ def library() -> dict:
                 "chapters": _count(s, Chapter, Chapter.file_id == f.id),
                 "chunks": _count(s, Chunk, Chunk.file_id == f.id),
             })
-    return {"documents": docs, "images": images}
+        sources = _source_cards(s)
+    return {"documents": docs, "images": images, "sources": sources}
 
 
 @router.get("/wiki")
@@ -287,6 +339,58 @@ def wiki_entity(stem: str) -> dict:
             ],
             "related": related,
         }
+
+
+@router.get("/wiki/source/{stem}")
+def wiki_source(stem: str) -> dict:
+    """A source document's synthesis profile: meta + an authored lead, the chapters it populated
+    (linking into the document reader), and its most claim-rich entities."""
+    if not _SLUG.match(stem):
+        raise HTTPException(status_code=404, detail="not found")
+    from doctalk.synth.outline import cluster_entities
+
+    with session_scope() as s:
+        page = repo.get_wiki_page_by_path(s, f"sources/{stem}.md")
+        if page is None:
+            raise HTTPException(status_code=404, detail="source not found")
+        f = repo.get_file_by_filename(s, page.title)
+        if f is None:
+            raise HTTPException(status_code=404, detail="source file not found")
+
+        chapters_all = repo.get_chapters(s, f.id)
+        chap_by_id = {c.id: c for c in chapters_all}
+        clusters = cluster_entities(s, f.id)  # top-level chapter id -> {entity_id}
+        covered = sorted(
+            (chap_by_id[cid] for cid in clusters if cid in chap_by_id), key=lambda c: c.ord
+        )
+        contents = [
+            {"title": c.title, "chapter_id": c.id, "entities": len(clusters[c.id])}
+            for c in covered
+        ]
+
+        all_ids = set().union(*clusters.values()) if clusters else set()
+        counts = repo.count_claims_by_entity(s, list(all_ids))
+        key_entities = []
+        for eid in sorted(all_ids, key=lambda e: counts.get(e, 0), reverse=True)[:15]:
+            e = s.get(Entity, eid)
+            if e is None or e.status not in ("active", "unresolved"):
+                continue
+            key_entities.append(
+                {"name": e.name, "stem": Path(e.wiki_path).stem if e.wiki_path else None}
+            )
+
+        meta = {
+            "title": f.filename,
+            "hash": f.content_hash,
+            "format": f.format,
+            "size": _human_size(f.byte_size),
+            "chapters": sum(1 for c in chapters_all if c.parent_id is None),
+            "entities": len(repo.get_entity_ids_for_file(s, f.id)),  # full contribution
+            "claims": repo.count_claims_for_file(s, f.id),
+            "ingested": f.created_at.date().isoformat() if f.created_at else None,
+        }
+    return {**meta, "lead": _source_lead_html(stem), "contents": contents,
+            "key_entities": key_entities}
 
 
 @router.get("/doc/{content_hash}")

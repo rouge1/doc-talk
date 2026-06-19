@@ -15,16 +15,13 @@ a failed call skips that topic, never the stage.
 
 from __future__ import annotations
 
-import re
-
 from doctalk.config import get_settings
 from doctalk.db import repo
 from doctalk.db.models import utcnow
 from doctalk.ingest.dag import StageContext
 from doctalk.models.chat import chat as _chat
 from doctalk.synth import pages, wikirepo
-
-_SLUG = re.compile(r"[^a-z0-9]+")
+from doctalk.synth.outline import cluster_entities, linkify as _linkify, slugify as _slug
 
 _SYSTEM = (
     "You write one section of a personal knowledge wiki. Given the entities and claims of one "
@@ -32,36 +29,6 @@ _SYSTEM = (
     "subject. Use ONLY the provided claims — never invent facts. When you name a listed entity, "
     "use its [[wikilink]] exactly as given. Return only the prose: no heading, no preamble."
 )
-
-
-def _slug(text: str) -> str:
-    return _SLUG.sub("-", text.lower()).strip("-")[:80].rstrip("-") or "topic"
-
-
-def _top_level_map(chapters: list) -> dict[int, "repo.Chapter"]:
-    """chapter_id -> its level-1 ancestor (itself if already top-level)."""
-    by_id = {c.id: c for c in chapters}
-    out: dict[int, repo.Chapter] = {}
-    for c in chapters:
-        node = c
-        while node.parent_id is not None and node.parent_id in by_id:
-            node = by_id[node.parent_id]
-        out[c.id] = node
-    return out
-
-
-def cluster_entities(session, file_id: int) -> dict[int, set[int]]:
-    """top-level-chapter id -> entity ids this source mentions there (chunk-less mentions and
-    chunks outside any chapter can't be located, so they don't join a cluster)."""
-    top = _top_level_map(repo.get_chapters(session, file_id))
-    chapter_of = {c.id: c.chapter_id for c in repo.get_chunks(session, file_id)}
-    clusters: dict[int, set[int]] = {}
-    for m in repo.get_mentions_for_file(session, file_id):
-        chapter_id = chapter_of.get(m.chunk_id) if m.chunk_id is not None else None
-        if chapter_id is None or chapter_id not in top:
-            continue
-        clusters.setdefault(top[chapter_id].id, set()).add(m.entity_id)
-    return clusters
 
 
 def _digest(session, entity_ids: set[int], cap: int) -> tuple[list[str], list[tuple[str, str]]]:
@@ -83,18 +50,6 @@ def _digest(session, entity_ids: set[int], cap: int) -> tuple[list[str], list[tu
         lines.append(f"- [[{slug}|{entity.name}]] ({entity.type}): {first}")
         refs.append((slug, entity.name))
     return lines, refs
-
-
-def _linkify(prose: str, refs: list[tuple[str, str]]) -> str:
-    """Wikilink the first plain-text occurrence of each entity name. The model is *asked* to link
-    inline but in practice writes plain names; this makes the prose navigable deterministically.
-    Longest names first so 'unsalted butter' wins over a hypothetical 'butter'; the lookbehind
-    skips names already inside a [[link|...]]."""
-    for slug, name in sorted(refs, key=lambda r: len(r[1]), reverse=True):
-        pattern = re.compile(rf"(?<![\[|\w]){re.escape(name)}\b")
-        if f"[[{slug}|" not in prose:
-            prose = pattern.sub(f"[[{slug}|{name}]]", prose, count=1)
-    return prose
 
 
 def _render(
