@@ -26,8 +26,10 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # JSON API for the Phase 3 React frontend (the Jinja routes below stay intact).
 from doctalk.api.json_api import router as json_router  # noqa: E402
+from doctalk.api.maintenance import router as maintenance_router  # noqa: E402
 
 app.include_router(json_router)
+app.include_router(maintenance_router)
 
 
 @app.get("/", response_class=HTMLResponse)

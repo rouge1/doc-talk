@@ -219,13 +219,74 @@ export interface PageInfo {
   rects: Rect[];
 }
 
+// --- Maintenance (the operator loop: lint -> heal -> merge -> prune) -----------------------------
+
+export interface Finding {
+  detail: string;
+  ref: string | null;
+}
+
+export interface FindingGroup {
+  kind: string;
+  count: number;
+  items: Finding[];
+}
+
+export interface Findings {
+  total: number;
+  groups: FindingGroup[];
+}
+
+export interface CollisionEntity {
+  id: number;
+  name: string;
+  type: string;
+  stem: string | null;
+}
+
+export interface CollisionPlan {
+  mergeable: { src: CollisionEntity; dst: CollisionEntity }[];
+  skipped: { src: CollisionEntity; dst: CollisionEntity; reason: string }[];
+}
+
+export interface MergeResult {
+  applied: { src: string; dst: string }[];
+  skipped: { src: string; dst: string; reason: string }[];
+  merged: number;
+  sha: string | null;
+}
+
+// The admin token (for the gated mutating actions) lives in this browser only — sent as a header,
+// never in a URL. Empty while the server's gate is open (DOCTALK_ADMIN_TOKEN unset).
+const ADMIN_KEY = "doctalk-admin-token";
+export const getAdminToken = (): string => localStorage.getItem(ADMIN_KEY) ?? "";
+export const setAdminToken = (t: string): void => {
+  if (t) localStorage.setItem(ADMIN_KEY, t);
+  else localStorage.removeItem(ADMIN_KEY);
+};
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(`${res.status} ${path}`);
   return (await res.json()) as T;
 }
 
+async function post<T>(path: string): Promise<T> {
+  const token = getAdminToken();
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { Accept: "application/json", ...(token ? { "X-Admin-Token": token } : {}) },
+  });
+  if (res.status === 401) throw new Error("401 admin token required");
+  if (!res.ok) throw new Error(`${res.status} ${path}`);
+  return (await res.json()) as T;
+}
+
 export const api = {
+  maintenanceLint: () => get<Findings>("/api/maintenance/lint"),
+  maintenanceAudit: () => get<Findings>("/api/maintenance/audit"),
+  slugCollisions: () => get<CollisionPlan>("/api/maintenance/slug-collisions"),
+  applyCollisions: () => post<MergeResult>("/api/maintenance/merge-collisions"),
   stats: () => get<Stats>("/api/stats"),
   library: () => get<Library>("/api/library"),
   wiki: () => get<WikiIndex>("/api/wiki"),

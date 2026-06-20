@@ -131,6 +131,13 @@ class Settings(BaseSettings):
     # (synth.promote). Same-subject re-phrasings append to the existing page instead of forking.
     query_dup_threshold: float = 0.85
 
+    # --- Maintenance web surface (the operator loop: lint -> heal -> merge -> prune) ---------
+    # The /maintenance page's mutating actions check this token in the X-Admin-Token header. Empty
+    # (the default) = gate OPEN, for single-user local dev; set DOCTALK_ADMIN_TOKEN to lock the
+    # mutating endpoints. Read endpoints (the findings dashboard) stay open. Set a token before
+    # exposing the destructive actions (prune) beyond localhost.
+    admin_token: str = ""
+
     # --- Entity resolution (synth_resolve; see docs/entity-resolution.md) ---
     # Two-threshold band over a [0,1] score: confident MATCH only when high AND well-separated from
     # the runner-up; confident NEW only when clearly novel; the murky middle DEFERs (LLM-adjudicated,
