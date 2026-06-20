@@ -93,6 +93,21 @@ export default function Maintenance() {
         </p>
       </section>
 
+      {/* vitals strip — same ledger Library and Ingest open with, so the operator pages read alike */}
+      <div className="ledger">
+        <Stat n={lint.data?.total} l="Flagged" />
+        <Stat
+          n={plan.data?.mergeable.length}
+          l="To merge"
+          cls={plan.data && plan.data.mergeable.length > 0 ? "s-running" : "s-done"}
+        />
+        <Stat
+          n={audit.data?.total}
+          l="Drift"
+          cls={audit.data && audit.data.total > 0 ? "s-error" : "s-done"}
+        />
+      </div>
+
       <CollisionCase
         plan={plan}
         recent={recent.data ?? null}
@@ -107,6 +122,16 @@ export default function Maintenance() {
       <LighterSection title="Audit" sub="wiki ↔ truth" state={audit} />
 
       <AdminToken />
+    </div>
+  );
+}
+
+// One ledger cell — big serif number + mono label, state-coloured. Shared idiom with Ingest/Library.
+function Stat({ n, l, cls = "" }: { n: number | undefined; l: string; cls?: string }) {
+  return (
+    <div className="stat">
+      <div className={`n tnum ${cls}`}>{n ?? "·"}</div>
+      <div className="l">{l}</div>
     </div>
   );
 }
