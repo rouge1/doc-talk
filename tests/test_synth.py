@@ -29,6 +29,11 @@ def test_norm_key_strips_articles_qualifiers_and_collapses_ws():
     assert norm_key("HCI.") == "hci"
     assert norm_key("the Link Manager") == "link manager"
     assert norm_key("   ") == ""
+    # Underscores are separators too: the model writes one concept both ways, so they must key alike
+    # (else AFH_channel_map and "AFH channel map" fragment into slug-colliding duplicate pages).
+    assert norm_key("AFH_channel_map") == norm_key("AFH channel map") == "afh channel map"
+    # But operators are NOT spacing — C[t+1] and C[t-1] stay distinct (only the slugifier conflates).
+    assert norm_key("C[t+1]") != norm_key("C[t-1]")
 
 
 # --- pageworthiness gate ----------------------------------------------------

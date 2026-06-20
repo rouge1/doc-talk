@@ -1,7 +1,9 @@
 """Entity-name normalization — step (0) of ``synth_resolve`` (see ``docs/entity-resolution.md``).
 
-``norm_key`` is the cheap blocking key the resolver matches on: NFKC, lowercased, whitespace
-collapsed, leading articles and a small set of trailing generic qualifiers stripped ("the E0
+``norm_key`` is the cheap blocking key the resolver matches on: NFKC, lowercased, whitespace AND
+underscores collapsed (so ``AFH_channel_map`` and "AFH channel map" key alike — the model renders the
+same concept both ways, and treating them as one avoids the fragmentation that left slug-colliding
+duplicate pages), leading articles and a small set of trailing generic qualifiers stripped ("the E0
 procedure" / "E0 process" → ``e0``). The stripped qualifiers are *not* discarded by callers — they
 keep the original surface as an alias. Deterministic and dependency-free so it's stable across runs
 and trivially testable; the same key is reused by the future fuzzy/embedding resolver.
@@ -16,7 +18,7 @@ import unicodedata
 # small and conservative — over-stripping causes conflation, the costlier failure mode.
 _GENERIC_TRAILING = {"procedure", "process", "mechanism", "feature", "function", "method"}
 _LEADING_ARTICLES = {"the", "a", "an"}
-_WS = re.compile(r"\s+")
+_WS = re.compile(r"[\s_]+")  # underscores are separators: AFH_channel_map keys like "AFH channel map"
 
 
 _ACRONYM = re.compile(r"^(.+?)\s*\(([A-Za-z][A-Za-z0-9.\-]{1,15})\)\s*$")

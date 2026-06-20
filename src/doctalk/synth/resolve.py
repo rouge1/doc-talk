@@ -136,7 +136,7 @@ def resolve_candidate(
 
     # --- two-threshold decision band --------------------------------------
     if ranked and s_star >= s.resolve_tau_high and margin >= s.resolve_margin:
-        return _apply_match(session, ranked[0][2], surfaces, s_star, ranked[0][1])
+        return _apply_match(session, ranked[0][2], surfaces, s_star, ranked[0][1], vec=mention_vec)
     if s_star < s.resolve_tau_low:
         return _apply_new(session, name, type_, nk, aliases, acronyms, mention_vec,
                           ranked[0][1] if ranked else {})
@@ -163,9 +163,15 @@ def _store_vector(session, entity_id: int, type_: str, vec: list[float] | None) 
     repo.set_entity_name_embedding_id(session, entity_id, entity_id)
 
 
-def _apply_match(session, entity: Entity, surfaces, score, sig) -> Resolution:
+def _apply_match(
+    session, entity: Entity, surfaces, score, sig, *, vec: list[float] | None = None
+) -> Resolution:
     if entity.status == "pruned":  # a fresh mention re-admits a pruned entity (gate evolution)
         repo.set_entity_status(session, entity.id, "active")
+        # Prune deleted this entity's name vector. Restore it on re-admit, or the entity comes back
+        # active but invisible — no vector means it can't be a resolution candidate (so the next
+        # mention mints a fresh duplicate instead of matching) and never surfaces in page retrieval.
+        _store_vector(session, entity.id, entity.type, vec)
     repo.add_entity_aliases(session, entity.id, surfaces)
     return Resolution(entity=entity, decision="MATCH", score=score, signals=sig)
 
@@ -185,7 +191,8 @@ def _existing_identity(session, name: str, type_: str) -> Entity | None:
 def _apply_new(session, name, type_, nk, aliases, acronyms, vec, sig) -> Resolution:
     existing = _existing_identity(session, name, type_)
     if existing is not None:
-        return _apply_match(session, existing, [name, *aliases], 1.0, {**sig, "exact_name": True})
+        return _apply_match(session, existing, [name, *aliases], 1.0,
+                            {**sig, "exact_name": True}, vec=vec)
     entity = repo.create_entity(
         session, name=name, type_=type_, norm_key=nk, aliases=aliases, acronyms=acronyms
     )
@@ -203,7 +210,8 @@ def _apply_defer(session, *, name, type_, nk, aliases, acronyms, definition, men
         else None
     )
     if verdict == "same":
-        return _apply_match(session, top[0][2], [name, *aliases], top[0][0], {**top[0][1], "llm": "same"})
+        return _apply_match(session, top[0][2], [name, *aliases], top[0][0],
+                            {**top[0][1], "llm": "same"}, vec=mention_vec)
     if verdict == "different":
         return _apply_new(session, name, type_, nk, aliases, acronyms, mention_vec,
                           {**(top[0][1] if top else {}), "llm": "different"})
@@ -215,6 +223,7 @@ def _apply_defer(session, *, name, type_, nk, aliases, acronyms, definition, men
             session, existing, [name, *aliases],
             top[0][0] if top else 0.0,
             {**(top[0][1] if top else {}), "llm": verdict or "skipped", "exact_name": True},
+            vec=mention_vec,
         )
     entity = repo.create_entity(
         session, name=name, type_=type_, norm_key=nk, aliases=aliases, acronyms=acronyms,

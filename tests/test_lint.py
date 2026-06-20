@@ -76,6 +76,18 @@ def test_deleted_page_flagged_and_healed(db):
         assert not any(f.kind == "deleted_page" for f in lint.lint(s, wiki))  # healed -> no longer flagged
 
 
+def test_slug_collision_flagged(db):
+    # Two active entities whose norm_keys differ only by underscore-vs-space slugify to the same path,
+    # so one's page silently overwrites the other. lint must flag the collision by slug.
+    with session_scope() as s:
+        _entity(s, "AFH_channel_map", "afh_channel_map")
+        _entity(s, "AFH channel map", "afh channel map")
+        findings = lint.lint(s, get_settings().wiki_dir)
+    coll = [f for f in findings if f.kind == "slug_collision"]
+    assert len(coll) == 1 and coll[0].ref == "afh-channel-map"
+    assert "AFH channel map" in coll[0].detail and "AFH_channel_map" in coll[0].detail
+
+
 def test_duplicate_candidates_suggested(db):
     with session_scope() as s:
         _entity(s, "Link Manager", "link manager", wiki_path="entities/link-manager.md")

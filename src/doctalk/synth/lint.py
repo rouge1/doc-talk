@@ -113,6 +113,26 @@ def _deleted_pages(session, wiki_dir: Path) -> list[Finding]:
     return out
 
 
+def _slug_collisions(session) -> list[Finding]:
+    """Active entities whose ``pages.slug_for`` collides — they map to the same ``entities/<slug>.md``,
+    so integrate's last-writer-wins silently drops one's page and the wiki shows duplicate cards. Most
+    are underscore-vs-space dupes that ``wiki-merge --slug-collisions`` folds together; a few (``C[t+1]``
+    vs ``C[t-1]``) are genuinely distinct and only the slugifier conflates them — those stay manual."""
+    from collections import defaultdict
+
+    from sqlalchemy import select
+
+    groups: dict[str, list[Entity]] = defaultdict(list)
+    for e in session.scalars(select(Entity).where(Entity.status == "active")):
+        groups[pages.slug_for(e)].append(e)
+    out = []
+    for slug, es in groups.items():
+        if len(es) > 1:
+            names = ", ".join(sorted(e.name for e in es))
+            out.append(Finding("slug_collision", f"{len(es)} share this slug: {names}", slug))
+    return out
+
+
 def _duplicate_candidates(session) -> list[Finding]:
     from sqlalchemy import select
 
@@ -185,6 +205,7 @@ def lint(session, wiki_dir: Path) -> list[Finding]:
         *_unresolved(session),
         *_missing_pages(session),
         *_deleted_pages(session, wiki_dir),
+        *_slug_collisions(session),
         *_duplicate_candidates(session),
         *_contradictions(session),
         *_unattested(session),

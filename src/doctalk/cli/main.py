@@ -239,38 +239,38 @@ def entity_review(limit: int = typer.Option(40, help="max queue entries")) -> No
 
 @app.command()
 def wiki_merge(
-    from_entity: str,
-    into_entity: str,
+    from_entity: str = typer.Argument(None, help="entity to merge FROM (id/name/norm_key)"),
+    into_entity: str = typer.Argument(None, help="entity to merge INTO (id/name/norm_key)"),
+    slug_collisions: bool = typer.Option(
+        False, "--slug-collisions", help="batch-heal active entities that share a slug"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="with --slug-collisions: print the plan, change nothing"
+    ),
     reason: str = typer.Option("manual merge", help="why (recorded in entity_merges)"),
 ) -> None:
     """Merge one entity into another (reversible). Repoints mentions/claims, rewrites the survivor
-    page, leaves a redirect stub, and commits to the wiki git repo. FROM/INTO are id/name/norm_key."""
-    from doctalk.db.models import utcnow
-    from doctalk.synth import pages, wikirepo
-    from doctalk.vector import store as vstore
+    page, leaves a redirect stub, and commits to the wiki git repo. FROM/INTO are id/name/norm_key.
+
+    ``--slug-collisions`` instead batch-heals every active entity that shares a slug with another,
+    auto-merging only the safe pairs (matching underscore/space-insensitive key + compatible type);
+    genuine collisions like ``C[t+1]``/``C[t-1]`` are reported and left for a manual merge."""
+    from doctalk.synth import merge, pages, wikirepo
+
+    if slug_collisions:
+        _wiki_merge_collisions(dry_run)
+        return
+    if not from_entity or not into_entity:
+        raise typer.BadParameter("provide FROM and INTO entities, or use --slug-collisions")
 
     with session_scope() as session:
         src = _resolve_entity(session, from_entity)
         dst = _resolve_entity(session, into_entity)
         if src.id == dst.id:
             raise typer.BadParameter("cannot merge an entity into itself")
-        src_name, src_slug = src.name, pages.slug_for(src)
-        dst_id, dst_name, dst_slug = dst.id, dst.name, pages.slug_for(dst)
-        merge_id = repo.merge_entities(session, src.id, dst.id, reason=reason).id
-
-        dst = session.get(Entity, dst_id)  # reload with merged aliases/source_count
-        survivor_path = f"entities/{dst_slug}.md"
-        md_hash = wikirepo.write_page(survivor_path, pages.render_entity_page(session, dst))
-        repo.upsert_wiki_page(
-            session, path=survivor_path, title=dst.name, kind="entity", entity_id=dst_id,
-            source_count=dst.source_count, last_synth_at=utcnow(), md_hash=md_hash,
-        )
-        wikirepo.write_page(
-            f"entities/{src_slug}.md",
-            f"# {src_name}\n\n> merged\n\nMerged into [[{dst_slug}|{dst_name}]].\n",
-        )
+        src_name, dst_name = src.name, dst.name
+        merge_id = merge.apply_merge(session, src, dst, reason)
         wikirepo.write_page("index.md", pages.render_index(session))
-        vstore.delete_entity_name(src.id)
 
     committed = wikirepo.commit(f"wiki-merge: {src_name} -> {dst_name}")
     sha = wikirepo.head_sha() if committed else None
@@ -280,6 +280,31 @@ def wiki_merge(
             if row is not None:
                 row.committed_sha = sha
     typer.echo(f"merged '{src_name}' -> '{dst_name}'" + (f"  ({sha[:8]})" if sha else ""))
+
+
+def _wiki_merge_collisions(dry_run: bool) -> None:
+    """Plan (and unless ``dry_run``, apply) the slug-collision batch heal as one wiki commit."""
+    from doctalk.synth import merge, wikirepo
+
+    with session_scope() as session:
+        if dry_run:
+            mergeable, skipped = merge.plan_slug_collision_merges(session)
+            for src, dst, why in skipped:
+                typer.echo(f"  skip   {src.name!r} ~ {dst.name!r}  — {why}")
+            for src, dst in mergeable:
+                typer.echo(f"  would merge {src.name!r} -> {dst.name!r}")
+            typer.echo(f"\n{len(mergeable)} merge(s) planned, {len(skipped)} left manual "
+                       f"(dry-run — nothing changed)")
+            return
+        applied, skipped = merge.merge_slug_collisions(session)
+        for sname, dname, why in skipped:
+            typer.echo(f"  skip   {sname!r} ~ {dname!r}  — {why}")
+        for sname, dname in applied:
+            typer.echo(f"  merged {sname!r} -> {dname!r}")
+
+    if applied:
+        wikirepo.commit(f"wiki-merge: {len(applied)} slug collision(s)")
+    typer.echo(f"\n{len(applied)} merged, {len(skipped)} left manual")
 
 
 @app.command()
