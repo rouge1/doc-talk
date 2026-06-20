@@ -355,7 +355,10 @@ class EntityReview(Base):
 
 class EntityMerge(Base):
     """Audit + reversibility record for ``Merge(from→into)``. Keeps merges undoable and ties each to
-    the wiki git commit that enacted it."""
+    the wiki git commit that enacted it. ``moved`` is the undo manifest: once src's claims/mentions
+    are repointed into dst they're indistinguishable from dst's own, so unmerge can only repoint the
+    *right* rows back if the merge recorded exactly which ones it moved (and which aliases/acronyms it
+    contributed to the survivor). Null on pre-manifest rows — those merges can't be auto-reversed."""
 
     __tablename__ = "entity_merges"
 
@@ -364,6 +367,7 @@ class EntityMerge(Base):
     into_id: Mapped[int] = mapped_column(Integer, index=True)
     reason: Mapped[str] = mapped_column(String(256), default="")
     committed_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    moved: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

@@ -31,18 +31,38 @@ def merge_key(norm_key: str) -> str:
     return _SEP.sub(" ", norm_key).strip()
 
 
-def apply_merge(session, src: Entity, dst: Entity, reason: str) -> int:
+def canonical_display_name(names: list[str]) -> str:
+    """Choose one clean, consistent title for a merged survivor from the colliding spellings.
+
+    A slug collision means the same concept was written both with underscores and with spaces, so the
+    underscore is incidental formatting (not a code symbol — a real identifier wouldn't have a spaced
+    twin in the corpus). We render spaces and acronym-preserving Title Case: 'Channel_Map'/'channel
+    map' -> 'Channel Map', 'AFH_channel_map' -> 'AFH Channel Map', 'CS_DRBG' -> 'CS DRBG'. Purely
+    cosmetic — the raw spellings survive as aliases and the slug (from norm_key) is untouched."""
+    # Start from the spelling carrying the most case information so real acronyms (AFH, SDU, DRBG…)
+    # survive; ties keep the first (the survivor's own spelling).
+    base = max(names, key=lambda n: sum(c.isupper() for c in n))
+    # Capitalize lowercase words; leave already-cased tokens (acronyms, MixedCase) alone.
+    return " ".join(t if t != t.lower() else t.capitalize() for t in base.replace("_", " ").split())
+
+
+def apply_merge(session, src: Entity, dst: Entity, reason: str, *, prefer_name: bool = False) -> int:
     """Fold ``src`` into ``dst``: repoint claims/mentions, rewrite the survivor page, stub a redirect
     (skipped when src and dst share a slug — the one file already IS the survivor's), drop src's name
     vector. Returns the ``entity_merges`` id. The caller writes ``index.md`` and commits, so a batch
-    collapses into a single wiki commit."""
+    collapses into a single wiki commit.
+
+    ``prefer_name`` (set by the slug-collision batch) gives the survivor a clean, consistent title
+    drawn from both colliding spellings — see ``canonical_display_name``. Off for a deliberate single
+    merge, where the chosen target's name is respected as-is."""
     from doctalk.db.models import utcnow
 
     src_name, src_slug = src.name, pages.slug_for(src)
     dst_id, dst_slug = dst.id, pages.slug_for(dst)
-    merge_id = repo.merge_entities(session, src.id, dst.id, reason=reason).id
+    display = canonical_display_name([dst.name, src.name]) if prefer_name else None
+    merge_id = repo.merge_entities(session, src.id, dst.id, reason=reason, display_name=display).id
 
-    dst = session.get(Entity, dst_id)  # reload with merged aliases/source_count
+    dst = session.get(Entity, dst_id)  # reload with merged aliases/source_count/renamed title
     survivor_path = f"entities/{dst_slug}.md"
     md_hash = wikirepo.write_page(survivor_path, pages.render_entity_page(session, dst))
     repo.upsert_wiki_page(
@@ -99,17 +119,63 @@ def plan_slug_collision_merges(session) -> tuple[list[tuple[Entity, Entity]], li
     return mergeable, skipped
 
 
-def merge_slug_collisions(session) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
+def merge_slug_collisions(session) -> tuple[list[tuple[str, str, int]], list[tuple[str, str, str]]]:
     """Apply the safe slug-collision merges and rewrite ``index.md``. Returns ``(applied, skipped)``
-    as ``(src_name, dst_name[, reason])`` tuples (names captured before the merge mutates them). The
-    caller commits the wiki. Shared by the ``wiki-merge --slug-collisions`` CLI and the /maintenance
-    API so both heal identically."""
+    where applied items are ``(src_name, dst_name, merge_id)`` (names captured before the merge mutates
+    them; the merge_id lets the caller stamp the wiki commit onto these rows so the batch is undoable)
+    and skipped items are ``(src_name, dst_name, reason)``. The caller commits the wiki. Shared by the
+    ``wiki-merge --slug-collisions`` CLI and the /maintenance API so both heal identically."""
     mergeable, skipped = plan_slug_collision_merges(session)
-    applied: list[tuple[str, str]] = []
+    applied: list[tuple[str, str, int]] = []
     for src, dst in mergeable:
-        sname, dname = src.name, dst.name
-        apply_merge(session, src, dst, reason="slug-collision batch")
-        applied.append((sname, dname))
+        sname = src.name
+        merge_id = apply_merge(session, src, dst, reason="slug-collision batch", prefer_name=True)
+        applied.append((sname, dst.name, merge_id))  # dst.name is now the cleaned-up survivor title
     if applied:
         wikirepo.write_page("index.md", pages.render_index(session))
     return applied, [(s.name, d.name, why) for s, d, why in skipped]
+
+
+def undo_merge(session, merge) -> tuple[str, str]:
+    """Reverse one merge: repoint its claims/mentions back (``repo.unmerge_entities``), restore the
+    resurrected entity's name vector + real page, and rewrite the survivor's now-thinner page. Returns
+    ``(resurrected_name, survivor_name)``. The caller rewrites ``index.md`` and commits, so a batch
+    undo collapses into one wiki commit.
+
+    Note: undoing a *slug-collision* merge faithfully restores the collision — src and dst share a slug
+    again, so both want the same file. We write the survivor last (it's the richer page) and let lint
+    re-flag the pair, exactly as before the merge. Undo restores the prior state, warts and all."""
+    from doctalk.db.models import utcnow
+    from doctalk.synth.resolve import _embed, _store_vector
+
+    dst_id = merge.into_id
+    src = repo.unmerge_entities(session, merge)  # resurrects src (status active, wiki_path cleared)
+    dst = session.get(Entity, dst_id)
+
+    # apply_merge dropped src's name vector; restore it or src comes back invisible to retrieval/resolution.
+    _store_vector(session, src.id, src.type, _embed(src.name))
+
+    def _write(entity) -> None:
+        path = f"entities/{pages.slug_for(entity)}.md"
+        md_hash = wikirepo.write_page(path, pages.render_entity_page(session, entity))
+        repo.upsert_wiki_page(
+            session, path=path, title=entity.name, kind="entity", entity_id=entity.id,
+            source_count=entity.source_count, last_synth_at=utcnow(), md_hash=md_hash,
+        )
+        repo.set_entity_wiki_path(session, entity.id, path)
+
+    _write(src)
+    _write(dst)  # survivor written last: on a shared-slug collision its richer page is what remains
+    return src.name, dst.name
+
+
+def undo_batch(session, sha: str) -> list[tuple[str, str]]:
+    """Reverse every merge a wiki commit enacted (the unit the maintenance page's "Undo this batch"
+    button reverses), newest first, then rewrite ``index.md``. Returns ``(resurrected, survivor)``
+    name pairs. The caller commits the wiki."""
+    undone: list[tuple[str, str]] = []
+    for merge in repo.get_merges_by_sha(session, sha):
+        undone.append(undo_merge(session, merge))
+    if undone:
+        wikirepo.write_page("index.md", pages.render_index(session))
+    return undone

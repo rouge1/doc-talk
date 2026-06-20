@@ -13,8 +13,11 @@ from collections import defaultdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel
 
 from doctalk.config import get_settings
+from doctalk.db import repo
+from doctalk.db.models import Entity
 from doctalk.db.session import session_scope
 from doctalk.synth import lint, merge, wikirepo
 
@@ -76,15 +79,61 @@ def slug_collisions() -> dict:
 
 @router.post("/merge-collisions", dependencies=[Depends(require_admin)])
 def merge_collisions() -> dict:
-    """Apply the safe slug-collision merges (reversible) and commit the wiki. Mutating — gated."""
+    """Apply the safe slug-collision merges (reversible) and commit the wiki. Mutating — gated.
+    Stamps the commit sha onto the merge rows so the whole batch can be undone by that handle."""
     with session_scope() as s:
         applied, skipped = merge.merge_slug_collisions(s)
-    sha = None
-    if applied:
-        if wikirepo.commit(f"wiki-merge: {len(applied)} slug collision(s)"):
+        sha = None
+        if applied and wikirepo.commit(f"wiki-merge: {len(applied)} slug collision(s)"):
             sha = wikirepo.head_sha()
+            if sha:
+                repo.set_merge_committed_sha(s, [mid for _, _, mid in applied], sha)
     return {
-        "applied": [{"src": sname, "dst": dname} for sname, dname in applied],
+        "applied": [{"src": sname, "dst": dname} for sname, dname, _ in applied],
         "skipped": [{"src": sname, "dst": dname, "reason": why} for sname, dname, why in skipped],
         "merged": len(applied), "sha": sha,
     }
+
+
+class UndoRequest(BaseModel):
+    sha: str  # the wiki-commit handle a merge batch was stamped with (from the apply response)
+
+
+@router.post("/undo-merge", dependencies=[Depends(require_admin)])
+def undo_merge(body: UndoRequest) -> dict:
+    """Reverse a merge batch by its commit handle: repoint every moved claim/mention back, resurrect
+    the folded-away entities, restore their pages + name vectors, and commit the reversal as its own
+    wiki commit (merge then unmerge both show in the git log). Mutating — gated."""
+    with session_scope() as s:
+        undone = merge.undo_batch(s, body.sha)
+        new_sha = None
+        if undone and wikirepo.commit(f"wiki-unmerge: reversed {len(undone)} merge(s)"):
+            new_sha = wikirepo.head_sha()
+    return {
+        "undone": [{"src": src, "dst": dst} for src, dst in undone],
+        "count": len(undone),
+        "sha": new_sha,
+    }
+
+
+@router.get("/recent-merges")
+def recent_merges() -> dict:
+    """The most recent reversible merge batch (the rows sharing the newest commit handle), so the page
+    can still offer Undo after a reload. Empty when nothing reversible has been merged."""
+    with session_scope() as s:
+        latest_sha: str | None = None
+        for m in repo.get_entity_merges(s):  # id-ordered → the last committed batch wins
+            if m.committed_sha and m.moved is not None:
+                latest_sha = m.committed_sha
+        if latest_sha is None:
+            return {"sha": None, "count": 0, "merges": []}
+        batch = repo.get_merges_by_sha(s, latest_sha)
+        merges = []
+        for m in batch:
+            src, dst = s.get(Entity, m.from_id), s.get(Entity, m.into_id)
+            merges.append({
+                "id": m.id,
+                "src": src.name if src else f"#{m.from_id}",
+                "dst": dst.name if dst else f"#{m.into_id}",
+            })
+        return {"sha": latest_sha, "count": len(merges), "merges": merges}

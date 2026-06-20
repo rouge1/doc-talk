@@ -288,22 +288,23 @@ def _wiki_merge_collisions(dry_run: bool) -> None:
 
     with session_scope() as session:
         if dry_run:
-            mergeable, skipped = merge.plan_slug_collision_merges(session)
-            for src, dst, why in skipped:
+            plan_mergeable, plan_skipped = merge.plan_slug_collision_merges(session)
+            for src, dst, why in plan_skipped:
                 typer.echo(f"  skip   {src.name!r} ~ {dst.name!r}  — {why}")
-            for src, dst in mergeable:
+            for src, dst in plan_mergeable:
                 typer.echo(f"  would merge {src.name!r} -> {dst.name!r}")
-            typer.echo(f"\n{len(mergeable)} merge(s) planned, {len(skipped)} left manual "
+            typer.echo(f"\n{len(plan_mergeable)} merge(s) planned, {len(plan_skipped)} left manual "
                        f"(dry-run — nothing changed)")
             return
         applied, skipped = merge.merge_slug_collisions(session)
         for sname, dname, why in skipped:
             typer.echo(f"  skip   {sname!r} ~ {dname!r}  — {why}")
-        for sname, dname in applied:
+        for sname, dname, _mid in applied:
             typer.echo(f"  merged {sname!r} -> {dname!r}")
-
-    if applied:
-        wikirepo.commit(f"wiki-merge: {len(applied)} slug collision(s)")
+        if applied and wikirepo.commit(f"wiki-merge: {len(applied)} slug collision(s)"):
+            sha = wikirepo.head_sha()
+            if sha:  # stamp the commit onto the rows so the batch stays undoable (wiki-merge --undo / web)
+                repo.set_merge_committed_sha(session, [mid for _, _, mid in applied], sha)
     typer.echo(f"\n{len(applied)} merged, {len(skipped)} left manual")
 
 

@@ -69,6 +69,36 @@ def test_merge_collisions_action_heals(client):
     assert client.post("/api/maintenance/merge-collisions").json()["merged"] == 0
 
 
+def test_apply_then_undo_round_trips(client, stub_resolve):
+    """The narrative's happy path over HTTP: apply heals the collision and hands back a sha; undo by
+    that sha resurrects the folded entity and clears the batch — so the maintenance page's receipt +
+    [Undo this batch] button actually reverse the change."""
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        _rich, thin = _collision(s)
+    res = client.post("/api/maintenance/merge-collisions").json()
+    assert res["merged"] == 1 and res["sha"]
+    # recent-merges rehydrates the receipt after a reload
+    recent = client.get("/api/maintenance/recent-merges").json()
+    assert recent["sha"] == res["sha"] and recent["count"] == 1
+
+    undo = client.post("/api/maintenance/undo-merge", json={"sha": res["sha"]}).json()
+    assert undo["count"] == 1
+    with session_scope() as s:
+        from doctalk.db.models import Entity
+        assert s.get(Entity, thin).status == "active"            # folded entity is back
+    # the batch is gone — nothing reversible remains
+    assert client.get("/api/maintenance/recent-merges").json()["sha"] is None
+
+
+def test_undo_is_admin_gated(client, monkeypatch):
+    monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
+    get_settings.cache_clear()
+    blocked = client.post("/api/maintenance/undo-merge", json={"sha": "deadbeef"})
+    assert blocked.status_code == 401
+    get_settings.cache_clear()
+
+
 def test_admin_gate_blocks_mutations_when_token_set(client, monkeypatch):
     monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
     get_settings.cache_clear()

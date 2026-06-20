@@ -708,12 +708,18 @@ def get_open_reviews(session: Session, limit: int | None = None) -> list[EntityR
 
 
 def merge_entities(
-    session: Session, from_id: int, into_id: int, reason: str = ""
+    session: Session, from_id: int, into_id: int, reason: str = "",
+    display_name: str | None = None,
 ) -> EntityMerge:
     """Fold ``from`` into ``into`` (reversible, auditable). Repoints mentions + claims (claim_sources
     ride along on the claim), unions aliases/acronyms, marks ``from`` merged_into, recomputes the
     survivor's source count, and records an ``entity_merges`` row. DB-only — the caller handles the
-    name-vector cleanup, page redirect, and git commit."""
+    name-vector cleanup, page redirect, and git commit.
+
+    ``display_name`` (the caller's naming policy, mechanism-only here) renames the survivor when it
+    differs from the current name, keeping the old name as an alias and recording it in the manifest
+    so undo restores it. The norm_key/slug are untouched, so this only changes the page title + link
+    text, never where the page lives."""
     if from_id == into_id:
         raise ValueError("merge_entities: from and into are the same entity")
     src = session.get(Entity, from_id)
@@ -721,20 +727,121 @@ def merge_entities(
     if src is None or dst is None:
         raise ValueError(f"merge_entities: missing entity ({from_id} -> {into_id})")
 
+    # Capture the undo manifest BEFORE repointing — afterwards src's rows are indistinguishable from
+    # dst's own, so this list of ids is the only way an unmerge can repoint exactly the right ones back.
+    moved_claims = list(session.scalars(select(Claim.id).where(Claim.entity_id == from_id)))
+    moved_mentions = list(session.scalars(select(Mention.id).where(Mention.entity_id == from_id)))
+
     session.execute(update(Mention).where(Mention.entity_id == from_id).values(entity_id=into_id))
     session.execute(update(Claim).where(Claim.entity_id == from_id).values(entity_id=into_id))
 
-    dst.aliases = list(dict.fromkeys([*(dst.aliases or []), *(src.aliases or []), src.name]))
+    # Union aliases/acronyms, recording only what THIS merge added so unmerge strips exactly those
+    # (and leaves any the survivor already carried — they aren't ours to remove).
+    prior_aliases, prior_acronyms = set(dst.aliases or []), set(dst.acronyms or [])
+    incoming_aliases = [*(src.aliases or []), src.name]
+    aliases_added = [a for a in dict.fromkeys(incoming_aliases) if a not in prior_aliases]
+    acronyms_added = [a for a in dict.fromkeys(src.acronyms or []) if a not in prior_acronyms]
+    dst.aliases = list(dict.fromkeys([*(dst.aliases or []), *incoming_aliases]))
     dst.acronyms = list(dict.fromkeys([*(dst.acronyms or []), *(src.acronyms or [])]))
+
+    renamed_from = None
+    if display_name and display_name != dst.name:
+        renamed_from = dst.name
+        dst.aliases = list(dict.fromkeys([*dst.aliases, dst.name]))  # keep the old name reachable
+        dst.name = display_name
+
     src.status = "merged_into"
     src.wiki_path = dst.wiki_path  # redirect
 
-    merge = EntityMerge(from_id=from_id, into_id=into_id, reason=reason)
+    merge = EntityMerge(
+        from_id=from_id, into_id=into_id, reason=reason,
+        moved={
+            "claims": moved_claims, "mentions": moved_mentions,
+            "aliases_added": aliases_added, "acronyms_added": acronyms_added,
+            "renamed_from": renamed_from,
+        },
+    )
     session.add(merge)
     session.flush()
     recompute_entity_source_count(session, into_id)
     return merge
 
 
+def unmerge_entities(session: Session, merge: EntityMerge) -> Entity:
+    """Reverse ``merge`` using its manifest: repoint the exact claims/mentions it moved back to the
+    resurrected entity, strip the aliases/acronyms it contributed to the survivor, flip the source
+    back to ``active``, recompute both source counts, and delete the merge record. Returns the
+    resurrected ``from`` entity (with ``wiki_path`` cleared — the caller rewrites its page, restores
+    its name vector, and commits). DB-only, the mirror of ``merge_entities``.
+
+    Refuses a manifest-less (pre-undo-tracking) row: without the moved-id list there's no way to tell
+    which of the survivor's claims were the merged-away entity's, and guessing would corrupt both."""
+    if merge.moved is None:
+        raise ValueError(
+            f"unmerge: merge {merge.id} predates undo tracking (no manifest) — can't auto-reverse"
+        )
+    src = session.get(Entity, merge.from_id)
+    dst = session.get(Entity, merge.into_id)
+    if src is None or dst is None:
+        raise ValueError(f"unmerge: missing entity ({merge.from_id} -> {merge.into_id})")
+
+    moved = merge.moved
+    if moved.get("claims"):
+        session.execute(
+            update(Claim).where(Claim.id.in_(moved["claims"])).values(entity_id=merge.from_id)
+        )
+    if moved.get("mentions"):
+        session.execute(
+            update(Mention).where(Mention.id.in_(moved["mentions"])).values(entity_id=merge.from_id)
+        )
+
+    added_aliases = set(moved.get("aliases_added") or [])
+    if added_aliases and dst.aliases:
+        dst.aliases = [a for a in dst.aliases if a not in added_aliases]
+    added_acronyms = set(moved.get("acronyms_added") or [])
+    if added_acronyms and dst.acronyms:
+        dst.acronyms = [a for a in dst.acronyms if a not in added_acronyms]
+
+    renamed_from = moved.get("renamed_from")
+    if renamed_from:  # the merge prettified the survivor's title — put its original name back
+        dst.name = renamed_from
+        if dst.aliases:
+            dst.aliases = [a for a in dst.aliases if a != renamed_from]
+
+    src.status = "active"
+    src.wiki_path = None  # caller rewrites src's real page and sets the path via upsert_wiki_page
+
+    session.delete(merge)
+    session.flush()
+    recompute_entity_source_count(session, merge.from_id)
+    recompute_entity_source_count(session, merge.into_id)
+    return src
+
+
 def get_entity_merges(session: Session) -> list[EntityMerge]:
     return list(session.scalars(select(EntityMerge).order_by(EntityMerge.id)))
+
+
+def get_entity_merge(session: Session, merge_id: int) -> EntityMerge | None:
+    return session.get(EntityMerge, merge_id)
+
+
+def get_merges_by_sha(session: Session, sha: str) -> list[EntityMerge]:
+    """Every merge enacted by one wiki commit — the unit a batch undo reverses. Newest first so the
+    undo unwinds in reverse application order."""
+    return list(
+        session.scalars(
+            select(EntityMerge)
+            .where(EntityMerge.committed_sha == sha)
+            .order_by(EntityMerge.id.desc())
+        )
+    )
+
+
+def set_merge_committed_sha(session: Session, merge_ids: list[int], sha: str) -> None:
+    """Stamp the wiki commit onto the rows it enacted (known only after the commit lands), making
+    ``sha`` the handle a batch undo reverses."""
+    if merge_ids:
+        session.execute(
+            update(EntityMerge).where(EntityMerge.id.in_(merge_ids)).values(committed_sha=sha)
+        )
