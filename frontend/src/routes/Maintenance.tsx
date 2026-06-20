@@ -188,13 +188,6 @@ function CollisionCase({
         state="open"
         title="Slug collisions"
         dek={`${mergeable.length} duplicate ${mergeable.length === 1 ? "page" : "pages"} would be overwritten, the original lost.`}
-        action={
-          <button className="action" disabled={busy !== null} onClick={onApply}>
-            {busy === "apply"
-              ? "Merging…"
-              : `Apply ${mergeable.length} merge${mergeable.length === 1 ? "" : "s"}`}
-          </button>
-        }
       >
         <Act n="One" label="What's wrong">
           <p className="act-lede">
@@ -213,16 +206,23 @@ function CollisionCase({
 
         <Act n="Three" label="What fixing it does">
           <div className="contract">
-            <div className="contract-delta">
-              <span className="delta-eyebrow mono">slug collisions</span>
-              <div className="delta-grid">
-                <span className="contract-n tnum">{before}</span>
-                <span className="delta-arrow">→</span>
-                <span className="contract-n tnum">{after}</span>
-                <span className="delta-sub mono">now</span>
-                <span aria-hidden="true" />
-                <span className="delta-sub mono">after this heal</span>
+            <div className="contract-head">
+              <div className="contract-delta">
+                <span className="delta-eyebrow mono">slug collisions</span>
+                <div className="delta-grid">
+                  <span className="contract-n tnum">{before}</span>
+                  <span className="delta-arrow">→</span>
+                  <span className="contract-n tnum">{after}</span>
+                  <span className="delta-sub mono">now</span>
+                  <span aria-hidden="true" />
+                  <span className="delta-sub mono">after this heal</span>
+                </div>
               </div>
+              <button className="action" disabled={busy !== null} onClick={onApply}>
+                {busy === "apply"
+                  ? "Merging…"
+                  : `Apply ${mergeable.length} merge${mergeable.length === 1 ? "" : "s"}`}
+              </button>
             </div>
             <ul className="contract-ticks">
               <li>
@@ -379,13 +379,11 @@ function Case({
   state,
   title,
   dek,
-  action,
   children,
 }: {
   state: "open" | "resolved" | "clean";
   title: string;
   dek: string;
-  action?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const stamp = { open: "Open", resolved: "Resolved", clean: "Clear" }[state];
@@ -397,10 +395,7 @@ function Case({
           <h2 className="case-title">{title}</h2>
           <p className="case-dek">{dek}</p>
         </div>
-        <div className="case-head-right">
-          <span className={`case-stamp ${state}`}>{stamp}</span>
-          {action}
-        </div>
+        <span className={`case-stamp ${state}`}>{stamp}</span>
       </header>
       {children}
     </section>
