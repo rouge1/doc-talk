@@ -45,3 +45,6 @@ frontend/*.tsbuildinfo
 *.swp
 .idea/
 .vscode/
+
+# doctalk.sh runtime (pids, logs, watcher state)
+run/
