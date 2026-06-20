@@ -21,10 +21,20 @@ from doctalk.db.models import Chunk, Entity, File
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
 
-def slug_for(entity: Entity) -> str:
-    """Stable filename stem for an entity page (its normalized key, slugified)."""
+def base_slug_for(entity: Entity) -> str:
+    """The slug derived purely from the normalized key — what the lossy slugifier produces, *ignoring*
+    any disambiguation override. This is the grouping key for collision detection: two entities collide
+    exactly when their base slugs match."""
     base = entity.norm_key or entity.name.lower()
     return _SLUG_STRIP.sub("-", base).strip("-") or f"entity-{entity.id}"
+
+
+def slug_for(entity: Entity) -> str:
+    """Stable filename stem for an entity page. An explicit ``slug`` override (set by
+    ``synth.disambiguate`` when a genuinely-distinct sibling would otherwise share this base slug) wins;
+    otherwise the slug is derived from the normalized key. Every page write and ``[[wikilink]]`` routes
+    through here, so setting the override moves the page and all inbound links in one stroke."""
+    return entity.slug or base_slug_for(entity)
 
 
 def _provenance(session, claim) -> str:

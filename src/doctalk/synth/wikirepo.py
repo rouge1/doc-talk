@@ -94,6 +94,15 @@ def write_page(relpath: str, content: str) -> str:
     return hash_bytes(data)
 
 
+def remove_page(relpath: str) -> None:
+    """Delete a page file from the wiki (best-effort). Used by undo paths that retire a standalone page
+    (e.g. un-disambiguate folds a split entity back onto the shared slug, orphaning its own file)."""
+    try:
+        (repo_dir() / relpath).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def commit(message: str) -> bool:
     """Stage everything and commit (one commit per ingested source). No-op-safe; best-effort."""
     root = repo_dir()

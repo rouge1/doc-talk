@@ -239,6 +239,11 @@ class Entity(Base):
     acronyms: Mapped[list] = mapped_column(JSON, default=list)   # short<->long forms for blocking
     glossary_defined: Mapped[bool] = mapped_column(default=False)  # seeded from a definitions section
     wiki_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Disambiguation override for the page slug. Normally None (the slug is derived from norm_key); set
+    # only when a genuinely-distinct sibling would collide on that derived slug (``C[t+1]`` vs
+    # ``C[t-1]``, which the lossy slugifier flattens together). Then the lower-id sibling keeps the bare
+    # slug and the other carries an explicit ``<base>-<disc>`` here — see synth/disambiguate.py.
+    slug: Mapped[str | None] = mapped_column(String(512), nullable=True)
     embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # legacy/reserved
     name_embedding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # entity_names row
     # active = a real page; unresolved = provisionally-new from a DEFER (wiki-lint surfaces it);

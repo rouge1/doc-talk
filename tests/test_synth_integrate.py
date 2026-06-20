@@ -79,6 +79,7 @@ def test_slug_for_is_stable_and_filesystem_safe():
         norm_key = "all-purpose flour"
         name = "All-Purpose Flour"
         id = 1
+        slug = None  # no disambiguation override -> slug derived from norm_key
     assert pages.slug_for(_E()) == "all-purpose-flour"
 
 

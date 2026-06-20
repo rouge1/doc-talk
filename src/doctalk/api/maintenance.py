@@ -19,7 +19,7 @@ from doctalk.config import get_settings
 from doctalk.db import repo
 from doctalk.db.models import Entity
 from doctalk.db.session import session_scope
-from doctalk.synth import lint, merge, wikirepo
+from doctalk.synth import disambiguate, lint, merge, pages, wikirepo
 
 router = APIRouter(prefix="/api/maintenance")
 
@@ -65,14 +65,22 @@ def _ent(e) -> dict:
             "stem": e.wiki_path.rsplit("/", 1)[-1][:-3] if e.wiki_path else None}
 
 
+def _remedy(reason: str) -> str:
+    """How a skipped collision can still be resolved: a distinct-norm_key pair only collides in the
+    slugifier, so it's mechanically fixable by giving each its own page (``disambiguate``); anything
+    else (e.g. incompatible types — a same-name polysemy) genuinely needs a human (``manual``)."""
+    return "disambiguate" if reason.startswith("distinct norm_key") else "manual"
+
+
 @router.get("/slug-collisions")
 def slug_collisions() -> dict:
-    """The slug-collision merge plan: ``mergeable`` (safe to fold) + ``skipped`` (left manual)."""
+    """The slug-collision plan: ``mergeable`` (safe to fold) + ``skipped`` (not a merge). Each skipped
+    pair carries a ``remedy`` — ``disambiguate`` (give each its own page) or ``manual``."""
     with session_scope() as s:
         mergeable, skipped = merge.plan_slug_collision_merges(s)
         return {
             "mergeable": [{"src": _ent(src), "dst": _ent(dst)} for src, dst in mergeable],
-            "skipped": [{"src": _ent(src), "dst": _ent(dst), "reason": why}
+            "skipped": [{"src": _ent(src), "dst": _ent(dst), "reason": why, "remedy": _remedy(why)}
                         for src, dst, why in skipped],
         }
 
@@ -114,6 +122,53 @@ def undo_merge(body: UndoRequest) -> dict:
         "count": len(undone),
         "sha": new_sha,
     }
+
+
+@router.post("/disambiguate", dependencies=[Depends(require_admin)])
+def disambiguate_collisions() -> dict:
+    """Give each genuinely-distinct slug collision its own page (a stable ``<base>-<disc>`` slug for the
+    loser; the lower-id sibling keeps the bare slug). No claims move — this only un-shares the filename.
+    Reversible. Mutating — gated. Returns the receipt + the wiki commit handle."""
+    with session_scope() as s:
+        applied = disambiguate.disambiguate_collisions(s)
+        sha = None
+        if applied and wikirepo.commit(f"wiki-disambiguate: {len(applied)} slug collision(s)"):
+            sha = wikirepo.head_sha()
+    return {
+        "applied": [{"name": name, "base": base, "slug": slug, "id": eid}
+                    for name, base, slug, eid in applied],
+        "count": len(applied), "sha": sha,
+    }
+
+
+class DisambiguateUndoRequest(BaseModel):
+    ids: list[int]  # the entity ids to fold back onto the shared slug (from the apply receipt)
+
+
+@router.post("/undo-disambiguate", dependencies=[Depends(require_admin)])
+def undo_disambiguate(body: DisambiguateUndoRequest) -> dict:
+    """Reverse a disambiguation batch: clear each entity's slug override so it rejoins the shared slug
+    (restoring the prior collision, exactly as un-merge does), retire its standalone page, and commit
+    the reversal as its own wiki commit. Mutating — gated."""
+    with session_scope() as s:
+        undone = disambiguate.undo_disambiguations(s, body.ids)
+        new_sha = None
+        if undone and wikirepo.commit(f"wiki-disambiguate: reversed {len(undone)} split(s)"):
+            new_sha = wikirepo.head_sha()
+    return {"undone": [{"name": n, "base": b} for n, b in undone], "count": len(undone), "sha": new_sha}
+
+
+@router.get("/recent-disambiguations")
+def recent_disambiguations() -> dict:
+    """The entities currently split off to their own slug (the durable record), so the receipt + Undo
+    survive a reload. Empty when nothing has been disambiguated."""
+    with session_scope() as s:
+        ents = disambiguate.disambiguated_entities(s)
+        return {
+            "count": len(ents),
+            "entities": [{"id": e.id, "name": e.name, "base": pages.base_slug_for(e), "slug": e.slug}
+                         for e in ents],
+        }
 
 
 @router.get("/recent-merges")
