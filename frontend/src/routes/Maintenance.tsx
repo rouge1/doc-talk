@@ -6,8 +6,20 @@ import {
   type CollisionPlan,
   type Findings,
   type RecentBatch,
+  type RecentSplits,
 } from "../api";
 import { useFetch } from "../useFetch";
+
+// Which mutating action is in flight — every button disables while any one runs (one op at a time).
+type Busy = null | "apply" | "undo" | "split" | "unsplit";
+
+// The disambiguation half of the slug-collision case, bundled so it threads cleanly into the acts.
+interface HumanWork {
+  splits: RecentSplits | null;
+  busy: Busy;
+  onDisambiguate: () => void;
+  onUndoSplit: (ids: number[]) => void;
+}
 
 // Maintenance, told as a case file. Each issue is worked in four acts — what's wrong, why it
 // matters, what fixing it would do (a prediction), and, once you act, what actually happened
@@ -32,11 +44,12 @@ export default function Maintenance() {
   const refresh = () => setTick((t) => t + 1);
   const plan = useFetch<CollisionPlan>(() => api.slugCollisions(), `plan-${tick}`);
   const recent = useFetch<RecentBatch>(() => api.recentMerges(), `recent-${tick}`);
+  const splits = useFetch<RecentSplits>(() => api.recentSplits(), `splits-${tick}`);
   const lint = useFetch<Findings>(() => api.maintenanceLint(), `lint-${tick}`);
   const audit = useFetch<Findings>(() => api.maintenanceAudit(), `audit-${tick}`);
 
   const [live, setLive] = useState<LiveReceipt | null>(null);
-  const [busy, setBusy] = useState<null | "apply" | "undo">(null);
+  const [busy, setBusy] = useState<Busy>(null);
   const [note, setNote] = useState<string | null>(null);
 
   const fail = (e: unknown) =>
@@ -82,6 +95,46 @@ export default function Maintenance() {
     }
   };
 
+  // Disambiguation: give each genuinely-distinct collision its own page (no merge — nothing conflated).
+  const disambiguate = async () => {
+    setBusy("split");
+    setNote(null);
+    try {
+      const res = await api.disambiguate();
+      setNote(
+        res.count === 0
+          ? "Nothing to split — those pages already have unique slugs."
+          : `Split ${res.count} ${res.count === 1 ? "page" : "pages"} onto ${res.count === 1 ? "its" : "their"} own slug.`,
+      );
+      refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const undoSplit = async (ids: number[]) => {
+    setBusy("unsplit");
+    setNote(null);
+    try {
+      const res = await api.undoDisambiguate(ids);
+      setNote(`Folded ${res.count} ${res.count === 1 ? "page" : "pages"} back onto the shared slug.`);
+      refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const human: HumanWork = {
+    splits: splits.data ?? null,
+    busy,
+    onDisambiguate: disambiguate,
+    onUndoSplit: undoSplit,
+  };
+
   return (
     <div className="rise maint">
       <section className="hero compact">
@@ -115,6 +168,7 @@ export default function Maintenance() {
         busy={busy}
         onApply={apply}
         onUndo={undo}
+        human={human}
       />
       {note && <div className="action-msg mono">{note}</div>}
 
@@ -145,13 +199,15 @@ function CollisionCase({
   busy,
   onApply,
   onUndo,
+  human,
 }: {
   plan: { data: CollisionPlan | null; error: string | null; loading: boolean };
   recent: RecentBatch | null;
   live: LiveReceipt | null;
-  busy: null | "apply" | "undo";
+  busy: Busy;
   onApply: () => void;
   onUndo: (sha: string) => void;
+  human: HumanWork;
 }) {
   if (plan.loading && !plan.data)
     return <Case state="clean" title="Slug collisions" dek="Reading the wiki…" />;
@@ -174,6 +230,7 @@ function CollisionCase({
         skipped={skipped}
         busy={busy}
         onUndo={onUndo}
+        human={human}
         animate
       />
     );
@@ -232,13 +289,13 @@ function CollisionCase({
               {skipped.length > 0 && (
                 <li>
                   the {skipped.length} that {skipped.length === 1 ? "remains is" : "remain are"}{" "}
-                  genuinely different — a human's call
+                  genuinely different — given {skipped.length === 1 ? "its" : "their"} own page below
                 </li>
               )}
               <li>reversible — one button undoes the whole batch</li>
             </ul>
           </div>
-          <ManualRemainder skipped={skipped} />
+          <HumanCases skipped={skipped} human={human} />
         </Act>
       </Case>
     );
@@ -256,30 +313,43 @@ function CollisionCase({
         skipped={skipped}
         busy={busy}
         onUndo={onUndo}
+        human={human}
         animate={false}
       />
     );
   }
 
-  // 4) Clean — or only human-judgement cases remain.
+  // 4) No merges pending. There may still be genuine collisions to split, and/or splits on record.
+  const pendingHuman = skipped.length > 0;
+  const haveSplits = (human.splits?.count ?? 0) > 0;
+  if (!pendingHuman && !haveSplits) {
+    return (
+      <Case
+        state="clean"
+        title="Slug collisions"
+        dek="Every entity owns a unique page. Nothing to merge."
+      />
+    );
+  }
   return (
     <Case
-      state={skipped.length > 0 ? "open" : "clean"}
+      state={pendingHuman ? "open" : "resolved"}
       title="Slug collisions"
       dek={
-        skipped.length > 0
-          ? "Nothing safe to auto-merge — only genuinely-different pairs remain."
-          : "Every entity owns a unique page. Nothing to merge."
+        pendingHuman
+          ? "Nothing to merge — the rest are genuinely different pages that share a slug."
+          : "Each was given its own page. Nothing left colliding."
       }
     >
-      {skipped.length > 0 && (
-        <Act n="One" label="Left for a human">
+      <Act n="One" label={pendingHuman ? "Genuinely different" : "What happened"}>
+        {pendingHuman && (
           <p className="act-lede">
-            The slugifier collides these, but they're really distinct — merging would conflate them.
+            The slugifier collides these, but they're really distinct — so each gets its own page,
+            not a merge that would conflate them.
           </p>
-          <ManualRemainder skipped={skipped} bare />
-        </Act>
-      )}
+        )}
+        <HumanCases skipped={skipped} human={human} />
+      </Act>
     </Case>
   );
 }
@@ -294,6 +364,7 @@ function ResolvedCase({
   skipped,
   busy,
   onUndo,
+  human,
   animate,
 }: {
   pairs: { src: string; dst: string }[];
@@ -302,8 +373,9 @@ function ResolvedCase({
   predictedCount: number;
   sha: string | null;
   skipped: CollisionPlan["skipped"];
-  busy: null | "apply" | "undo";
+  busy: Busy;
   onUndo: (sha: string) => void;
+  human: HumanWork;
   animate: boolean;
 }) {
   // Verify each predicted merge by its folded entity (src); show the survivor's final name, which the
@@ -367,7 +439,7 @@ function ResolvedCase({
           )}
         </div>
 
-        <ManualRemainder skipped={skipped} />
+        <HumanCases skipped={skipped} human={human} />
       </Act>
     </Case>
   );
@@ -428,29 +500,89 @@ function ClashList({ pairs }: { pairs: { src: string; dst: string; slug: string 
   );
 }
 
-function ManualRemainder({
+// The disambiguation half of the slug-collision case. A genuine collision (same slug, distinct
+// entities) can't be merged — that would conflate two different things — but it can be *split*: each
+// entity gets its own page. This shows what's already been split (with Undo), the offer to split
+// what remains, and any pair that still needs a human (e.g. a same-name polysemy that wants a split
+// tool we haven't built). It owns the old "left for a human" dead-end and turns it into an action.
+function HumanCases({
   skipped,
-  bare = false,
+  human,
 }: {
   skipped: CollisionPlan["skipped"];
-  bare?: boolean;
+  human: HumanWork;
 }) {
-  if (skipped.length === 0) return null;
+  const offer = skipped.filter((s) => s.remedy === "disambiguate");
+  const manual = skipped.filter((s) => s.remedy === "manual");
+  const done = human.splits?.entities ?? [];
+  const { busy, onDisambiguate, onUndoSplit } = human;
+  if (offer.length === 0 && manual.length === 0 && done.length === 0) return null;
+
   return (
     <div className="remainder">
-      {!bare && (
-        <div className="remainder-head mono">
-          {skipped.length} left for a human
+      {done.length > 0 && (
+        <div className="split-receipt">
+          <div className="split-receipt-head">
+            <span className="r-check ok">✓</span>
+            <span className="split-msg">
+              {done.length} {done.length === 1 ? "page now has" : "pages now have"} its own slug.
+            </span>
+            <button
+              className="undo"
+              disabled={busy !== null}
+              onClick={() => onUndoSplit(done.map((d) => d.id))}
+            >
+              {busy === "unsplit" ? "Undoing…" : "Undo"}
+            </button>
+          </div>
+          {done.map((d) => (
+            <div className="split-row" key={d.id}>
+              <span className="r-from">{d.name}</span>
+              <span className="r-arrow mono">→</span>
+              <span className="split-slug mono">{d.slug}.md</span>
+            </div>
+          ))}
         </div>
       )}
-      {skipped.map((m, i) => (
-        <div className="remainder-row" key={i}>
-          <span className="r-from">{m.src.name}</span>
-          <span className="r-arrow mono">~</span>
-          <span className="r-into">{m.dst.name}</span>
-          <span className="r-reason muted">{m.reason}</span>
+
+      {offer.length > 0 && (
+        <div className="split-offer">
+          <div className="split-offer-head">
+            <div className="remainder-head mono">
+              {offer.length === 1
+                ? "1 shares a slug but isn't a duplicate"
+                : `${offer.length} share a slug but aren't duplicates`}
+            </div>
+            <button className="action ghost" disabled={busy !== null} onClick={onDisambiguate}>
+              {busy === "split"
+                ? "Splitting…"
+                : `Give each its own page${offer.length > 1 ? ` (${offer.length})` : ""}`}
+            </button>
+          </div>
+          {offer.map((m, i) => (
+            <div className="remainder-row" key={i}>
+              <span className="r-from">{m.src.name}</span>
+              <span className="r-arrow mono">~</span>
+              <span className="r-into">{m.dst.name}</span>
+              <span className="r-reason muted">only the slugifier collides them</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
+
+      {manual.length > 0 && (
+        <div className="manual-left">
+          <div className="remainder-head mono">{manual.length} left for a human</div>
+          {manual.map((m, i) => (
+            <div className="remainder-row" key={i}>
+              <span className="r-from">{m.src.name}</span>
+              <span className="r-arrow mono">~</span>
+              <span className="r-into">{m.dst.name}</span>
+              <span className="r-reason muted">{m.reason}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

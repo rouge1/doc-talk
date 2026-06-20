@@ -244,9 +244,13 @@ export interface CollisionEntity {
   stem: string | null;
 }
 
+// A skipped pair is not a merge. "disambiguate" = only the slugifier collides them, so each can get
+// its own page; "manual" = genuinely needs a human (e.g. a same-name split).
+export type Remedy = "disambiguate" | "manual";
+
 export interface CollisionPlan {
   mergeable: { src: CollisionEntity; dst: CollisionEntity }[];
-  skipped: { src: CollisionEntity; dst: CollisionEntity; reason: string }[];
+  skipped: { src: CollisionEntity; dst: CollisionEntity; reason: string; remedy: Remedy }[];
 }
 
 export interface MergeResult {
@@ -267,6 +271,32 @@ export interface RecentBatch {
   sha: string | null;
   count: number;
   merges: { id: number; src: string; dst: string }[];
+}
+
+// An entity given its own page slug to break a genuine slug collision.
+export interface SplitEntity {
+  id: number;
+  name: string;
+  base: string; // the shared slug it used to collide on
+  slug: string; // its new, distinct slug
+}
+
+export interface DisambiguateResult {
+  applied: SplitEntity[];
+  count: number;
+  sha: string | null;
+}
+
+export interface UndoDisambiguateResult {
+  undone: { name: string; base: string }[];
+  count: number;
+  sha: string | null;
+}
+
+// The entities currently split off — the durable record so the receipt + Undo survive a reload.
+export interface RecentSplits {
+  count: number;
+  entities: SplitEntity[];
 }
 
 // The admin token (for the gated mutating actions) lives in this browser only — sent as a header,
@@ -307,6 +337,10 @@ export const api = {
   applyCollisions: () => post<MergeResult>("/api/maintenance/merge-collisions"),
   recentMerges: () => get<RecentBatch>("/api/maintenance/recent-merges"),
   undoMerge: (sha: string) => post<UndoResult>("/api/maintenance/undo-merge", { sha }),
+  recentSplits: () => get<RecentSplits>("/api/maintenance/recent-disambiguations"),
+  disambiguate: () => post<DisambiguateResult>("/api/maintenance/disambiguate"),
+  undoDisambiguate: (ids: number[]) =>
+    post<UndoDisambiguateResult>("/api/maintenance/undo-disambiguate", { ids }),
   stats: () => get<Stats>("/api/stats"),
   library: () => get<Library>("/api/library"),
   wiki: () => get<WikiIndex>("/api/wiki"),
