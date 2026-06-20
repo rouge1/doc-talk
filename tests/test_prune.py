@@ -58,6 +58,38 @@ def test_prune_drops_junk_keeps_real(db):
         assert s.get(Entity, cake_id).status == "active"
 
 
+def test_prune_spares_a_collisions_survivor_page(db):
+    # Slugs aren't unique: an unattested "HCI" and an active "hci" both resolve to entities/hci.md.
+    # integrate's last-writer-wins gives the survivor the shared file + catalog row; pruning the
+    # unattested twin must NOT delete by path alone, or it destroys the live page (the regression
+    # that orphaned 204 pages / 1,534 links across the wiki).
+    wiki = get_settings().wiki_dir
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="a" * 64, path="/a", filename="a.pdf",
+                         format="pdf", mime="x", byte_size=1)
+        s.flush()
+        fid = repo.get_file_id(s, "a" * 64)
+        # ghost first, survivor second: the survivor's upsert wins the shared catalog row.
+        ghost_id, shared = _entity_with_page(s, "HCI", "hci")               # no claims -> orphan
+        live_id, shared2 = _entity_with_page(s, "hci", "hci", attest_file_id=fid)
+        assert shared == shared2 == "entities/hci.md"                       # same slug -> same path
+
+    with session_scope() as s:
+        assert [e.id for e in prune.orphan_entities(s)] == [ghost_id]       # only the ghost is junk
+        assert prune.prune(s, wiki) == ["HCI"]
+
+    assert (wiki / shared).exists()                                         # survivor's page intact
+    with session_scope() as s:
+        from doctalk.db.models import Entity
+
+        page = repo.get_wiki_page_by_path(s, shared)
+        assert page is not None and page.entity_id == live_id              # catalog still the survivor
+        assert s.get(Entity, ghost_id).status == "pruned"                  # ghost reaped, reversibly
+        assert s.get(Entity, ghost_id).wiki_path is None                   # its stale pointer dropped
+        assert s.get(Entity, live_id).status == "active"
+
+
 def test_prune_is_idempotent_and_noop_safe(db):
     wiki = get_settings().wiki_dir
     wikirepo.ensure_scaffold()

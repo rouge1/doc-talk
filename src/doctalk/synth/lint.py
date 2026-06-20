@@ -94,6 +94,25 @@ def _missing_pages(session) -> list[Finding]:
     return [Finding("missing_page", "mentioned but no wiki page", e.name) for e in rows]
 
 
+def _deleted_pages(session, wiki_dir: Path) -> list[Finding]:
+    """Active entities whose page file vanished from disk — ``wiki_path`` still points at a path
+    that no longer exists. Distinct from ``_missing_pages`` (an entity that never got a page): here
+    the file was destroyed out from under a live entity (the prune slug-collision bug left 204 such
+    victims, invisible to the old ``wiki_path IS NULL`` check). ``materialize_missing`` regenerates
+    them; this is the lint blind spot that let the loss go silent."""
+    if not wiki_dir.exists():
+        return []
+    from sqlalchemy import select
+
+    out = []
+    for e in session.scalars(
+        select(Entity).where(Entity.status == "active", Entity.wiki_path.is_not(None))
+    ):
+        if not (wiki_dir / e.wiki_path).exists():
+            out.append(Finding("deleted_page", "page file gone from disk — run wiki-lint --fix", e.name))
+    return out
+
+
 def _duplicate_candidates(session) -> list[Finding]:
     from sqlalchemy import select
 
@@ -165,6 +184,7 @@ def lint(session, wiki_dir: Path) -> list[Finding]:
         *_unsupported_claims(session),
         *_unresolved(session),
         *_missing_pages(session),
+        *_deleted_pages(session, wiki_dir),
         *_duplicate_candidates(session),
         *_contradictions(session),
         *_unattested(session),
@@ -198,22 +218,25 @@ def audit(session, wiki_dir: Path) -> list[Finding]:
 
 
 def materialize_missing(session, wiki_dir: Path) -> list[str]:
-    """Create pages for active entities that have none (never overwrites an existing page). Returns
-    the entity names materialized; the caller regenerates the index + commits."""
+    """Create pages for active entities that have none ON DISK — both entities that never got one
+    (``wiki_path`` NULL) and victims whose file was deleted out from under them (``wiki_path`` set
+    but the file is gone, e.g. the prune slug-collision bug). Never overwrites a page that exists.
+    Returns the entity names (re)materialized; the caller regenerates the index + commits."""
     from datetime import datetime, timezone
     from sqlalchemy import select
 
     created: list[str] = []
-    rows = session.scalars(
-        select(Entity).where(Entity.status == "active", Entity.wiki_path.is_(None))
-    )
-    for entity in rows:
+    # Scan every active entity (not just wiki_path-IS-NULL): a victim's pointer is non-null but
+    # stale, so the old query skipped exactly the rows that needed healing. The has-a-file fast
+    # path below makes this cheap for the (vast) majority whose page is intact.
+    for entity in session.scalars(select(Entity).where(Entity.status == "active")):
+        path = entity.wiki_path or f"entities/{pages.slug_for(entity)}.md"
+        if (wiki_dir / path).exists():
+            if entity.wiki_path != path:  # file present, pointer drifted — just relink
+                repo.set_entity_wiki_path(session, entity.id, path)
+            continue  # never overwrite an existing page
         if not repo.get_claims_for_entity(session, entity.id):
             continue  # nothing to write yet
-        path = f"entities/{pages.slug_for(entity)}.md"
-        if (wiki_dir / path).exists():
-            repo.set_entity_wiki_path(session, entity.id, path)  # catalog drifted; just relink
-            continue
         md_hash = wikirepo.write_page(path, pages.render_entity_page(session, entity))
         repo.upsert_wiki_page(
             session, path=path, title=entity.name, kind="entity", entity_id=entity.id,

@@ -57,8 +57,16 @@ def prune(session, wiki_dir: Path) -> list[str]:
             continue
         seen.add(entity.id)
         if entity.wiki_path:
-            (wiki_dir / entity.wiki_path).unlink(missing_ok=True)
-            repo.delete_wiki_page(session, entity.wiki_path)
+            # Slug-collision guard: only delete the page file + catalog row when the catalog row at
+            # this path still belongs to THIS entity. Slugs aren't unique — an unattested "HCI" and
+            # an active "hci" both resolve to entities/hci.md, and integrate's last-writer-wins means
+            # the survivor may own the shared file + catalog row. Deleting by path alone then destroys
+            # the live entity's page (the regression that orphaned 204 pages / 1,534 links). When a
+            # different entity owns the row (or none does), we drop only this entity's stale pointer.
+            page = repo.get_wiki_page_by_path(session, entity.wiki_path)
+            if page is not None and page.entity_id == entity.id:
+                (wiki_dir / entity.wiki_path).unlink(missing_ok=True)
+                repo.delete_wiki_page(session, entity.wiki_path)
         repo.prune_entity(session, entity.id)
         vstore.delete_entity_name(entity.id)  # derived index; keeps junk out of page retrieval
         pruned.append(entity.name)

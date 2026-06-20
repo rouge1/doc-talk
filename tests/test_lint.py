@@ -56,6 +56,26 @@ def test_missing_page_flagged(db):
     assert any(f.kind == "missing_page" and f.ref == "Orphaned Entity" for f in findings)
 
 
+def test_deleted_page_flagged_and_healed(db):
+    # The prune slug-collision bug left active entities whose page file was deleted out from under
+    # them: wiki_path is set (non-null) but the file is gone. The old wiki_path-IS-NULL checks were
+    # blind to this. lint must flag it ('deleted_page') and materialize_missing must regenerate it.
+    wiki = get_settings().wiki_dir
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        fid = _file(s)
+        e = _entity(s, "HCI", "hci", wiki_path="entities/hci.md")  # pointer set, but no file on disk
+        claim = repo.insert_claim(s, entity_id=e.id, file_id=fid, text="The host controller interface.")
+        repo.insert_claim_sources(s, claim.id, [{"file_id": fid, "chunk_id": None}])
+        assert not (wiki / "entities" / "hci.md").exists()
+        findings = lint.lint(s, wiki)
+        assert any(f.kind == "deleted_page" and f.ref == "HCI" for f in findings)
+        assert lint.materialize_missing(s, wiki) == ["HCI"]
+    assert (wiki / "entities" / "hci.md").exists()                 # regenerated
+    with session_scope() as s:
+        assert not any(f.kind == "deleted_page" for f in lint.lint(s, wiki))  # healed -> no longer flagged
+
+
 def test_duplicate_candidates_suggested(db):
     with session_scope() as s:
         _entity(s, "Link Manager", "link manager", wiki_path="entities/link-manager.md")
