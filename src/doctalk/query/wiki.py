@@ -100,14 +100,22 @@ def retrieve_pages(question: str, k: int = 6, *, min_score: float | None = None)
     fetch_k = max(k, settings.rerank_candidates) if use_rerank else k * 3
     raw = store.search_entity_names(qv, fetch_k)
     hits: list[PageHit] = []
+    seen: set[int] = set()  # one entity can hold several name vectors (an alias row, or a stale
+    # duplicate left by re-indexing) — collapse them to a single page so the rail shows one card and
+    # the prompt carries one ## block, not N copies of the same entity. Rows arrive best-distance
+    # first, so the first occurrence keeps the entity's strongest score.
     with session_scope() as session:
         for row in raw:
             score = round(1.0 - float(row.get("_distance", 0.0)), 4)
             if score < min_score:  # off-topic page (cosine relevance below the gate)
                 continue
-            entity = session.get(Entity, row["entity_id"])
+            eid = row["entity_id"]
+            if eid in seen:
+                continue
+            entity = session.get(Entity, eid)
             if entity is None or entity.status != "active":
                 continue
+            seen.add(eid)
             claims = [c for c in repo.get_claims_for_entity(session, entity.id) if c.status == "active"]
             if not claims:
                 continue

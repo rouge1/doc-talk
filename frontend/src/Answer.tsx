@@ -17,6 +17,10 @@ const INLINE = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|`[^`]+`|\[\d+\])/g;
 // -> dropped). The inline pass then turns the clean [n] into source links.
 function normalize(text: string): string {
   return text
+    // The model sometimes echoes a source's raw provenance inline — "(source: Core_v6.0.pdf p.95)"
+    // or "[10](file: …)" — instead of a clean [n]. Strip those parentheticals; the Sources rail is
+    // where provenance belongs, not mid-sentence.
+    .replace(/\((?:file|source):[^)]*\)/gi, "")
     .replace(/\[+([^[\]]*)\]+/g, (_m, inner: string) => {
       const nums = inner.match(/\d+/g);
       return nums ? nums.map((n) => `[${n}]`).join("") : "";
@@ -51,15 +55,16 @@ function inline(text: string, citations: Citation[], kp: string): ReactNode[] {
     } else {
       const n = Number(tok.slice(1, -1));
       const c = citations.find((x) => x.n === n);
-      out.push(
-        c ? (
+      // Only [n] that resolves to a real source becomes a mark. The model is given excerpts numbered
+      // [1..N], so anything out of range is an artifact — a hallucinated index, or a page number it
+      // mistook for a citation (e.g. [292]). Drop it rather than leak raw brackets into the prose.
+      if (c) {
+        out.push(
           <Link key={key} className="cite-mark" to={sourcePath(c)} title={`${c.file} · p.${c.page}`}>
             {n}
-          </Link>
-        ) : (
-          tok
-        ),
-      );
+          </Link>,
+        );
+      }
     }
     last = m.index + tok.length;
   }

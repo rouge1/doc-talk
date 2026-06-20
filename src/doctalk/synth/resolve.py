@@ -154,6 +154,11 @@ def resolve_candidate(
 def _store_vector(session, entity_id: int, type_: str, vec: list[float] | None) -> None:
     if vec is None:
         return
+    # Upsert, don't append: drop any prior vector for this entity first so re-indexing (a re-drop, or
+    # a DEFER row later re-stored) REPLACES the row instead of leaving a stale duplicate behind. The
+    # index had grown to 377 entities with 2+ identical vectors — each one made the entity surface
+    # twice in page retrieval. No-op for a brand-new entity (nothing to delete).
+    store.delete_entity_name(entity_id)
     store.add_entity_names([{"entity_id": entity_id, "type": type_, "vector": vec}])
     repo.set_entity_name_embedding_id(session, entity_id, entity_id)
 

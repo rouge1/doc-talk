@@ -80,6 +80,42 @@ def test_retrieve_pages_filters_to_active_with_claims(db, monkeypatch):
     assert hits[0].claims[0].sources == ["a.pdf p.1"]      # provenance carried through
 
 
+def test_retrieve_pages_dedupes_one_entity_with_many_vectors(db, monkeypatch):
+    # An entity can hold several name vectors (an alias row, or a stale duplicate from re-indexing).
+    # The ANN then returns the same entity_id more than once; retrieve_pages must collapse it to a
+    # single page — else the wiki rail shows duplicate cards and the prompt carries the block twice.
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash="a" * 64, path="/a", filename="a.pdf",
+                         format="pdf", mime="x", byte_size=1)
+        s.flush()
+        fid = repo.get_file_id(s, "a" * 64)
+        ch = repo.insert_chapters(s, fid, [{"level": 1, "ord": 0, "title": "Sec", "page_start": 1,
+                                            "page_end": 1, "source": "outline", "parent_ord": None}])[0]
+        repo.insert_chunks(s, fid, [{"chapter_id": ch.id, "page": 1, "ord": 0,
+                                     "char_count": 5, "text": "l2cap"}])
+        cid = repo.get_chunks(s, fid)[0].id
+        e = repo.create_entity(s, name="L2CAP layer", type_="component", norm_key="l2cap layer")
+        claim = repo.insert_claim(s, entity_id=e.id, file_id=fid, text="A layer in the stack.")
+        repo.insert_claim_sources(s, claim.id, [{"file_id": fid, "chunk_id": cid}])
+        eid = e.id
+
+    monkeypatch.setenv("DOCTALK_RERANK_ENABLED", "false")
+    from doctalk.config import get_settings
+    get_settings.cache_clear()
+    monkeypatch.setattr(wiki, "_embed_query", lambda q: [1.0, 0.0])
+    from doctalk.vector import store
+    # The same entity comes back twice (two identical name vectors), best-distance first.
+    monkeypatch.setattr(
+        store, "search_entity_names",
+        lambda qv, k, type_=None: [{"entity_id": eid, "_distance": 0.1},
+                                   {"entity_id": eid, "_distance": 0.1}],
+    )
+
+    hits = wiki.retrieve_pages("l2cap layer", k=6)
+    assert [h.entity_id for h in hits] == [eid]   # one card, not two
+    assert hits[0].score == 0.9                    # kept the strongest (first) occurrence
+
+
 def test_retrieve_pages_gates_off_topic_pages(db, monkeypatch):
     # An off-topic wiki shouldn't be cited for an unrelated question just because it's all that exists.
     with session_scope() as s:
