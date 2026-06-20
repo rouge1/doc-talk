@@ -476,7 +476,7 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
   background-size: 200% 100%; animation: shimmer 1.3s infinite; border-radius: 2px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-/* ---- maintenance (the operator loop) ----------------------------------- */
+/* ---- maintenance (the operator loop, told as case files) --------------- */
 .action {
   padding: .5rem 1.1rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .14em;
   text-transform: uppercase; color: var(--paper); background: var(--ink); border: 0;
@@ -484,39 +484,149 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 }
 .action:hover { background: var(--oxblood); }
 .action:disabled { opacity: .5; cursor: default; background: var(--ink); }
+.action-msg { padding: .8rem .2rem; font-size: .82rem; color: var(--good); letter-spacing: .04em; }
 
-.finding-groups { display: flex; flex-direction: column; gap: .2rem; margin: .4rem 0 1.4rem; }
-.finding-group { border-bottom: 1px solid var(--rule); padding: .1rem 0; }
-.finding-group summary {
-  display: flex; align-items: baseline; gap: .8rem; cursor: pointer; padding: .55rem .2rem;
-  list-style: none;
+/* the case card — the page's thesis: one open issue, worked in acts. State is carried in colour. */
+.case {
+  background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--rule);
+  border-radius: 3px; box-shadow: 4px 7px 0 rgba(33,29,23,.05);
+  padding: 1.5rem 1.7rem .4rem; margin: 1.8rem 0 2.4rem;
 }
-.finding-group summary::-webkit-details-marker { display: none; }
-.finding-group summary::before { content: "▸"; color: var(--ink-soft); font-size: .7rem; }
-.finding-group[open] summary::before { content: "▾"; }
-.fg-kind { font-size: .82rem; letter-spacing: .04em; color: var(--ink); text-transform: capitalize; }
-.fg-count { margin-left: auto; font-size: .72rem; color: var(--ink-soft); }
-.fg-items { margin: 0 0 .6rem 1.5rem; padding: 0; list-style: none; }
-.fg-items li { font-size: .86rem; color: var(--ink-soft); padding: .22rem 0; line-height: 1.4; }
+.case.open { border-left-color: var(--ochre); }
+.case.resolved { border-left-color: var(--good); }
+.case.clean { border-left-color: var(--rule); }
+.case-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.case-head .kicker { margin-bottom: .35rem; }
+.case-title { font-family: var(--serif); font-weight: 600; font-size: 1.7rem; line-height: 1.05;
+  margin: 0; color: var(--ink); }
+.case-dek { margin: .4rem 0 0; color: var(--ink-soft); font-size: 1.02rem; max-width: 52ch; }
+/* the accession stamp, reused: a tilted ruled chip whose word + colour read the case state */
+.case-stamp {
+  flex: none; font-family: var(--mono); font-size: .62rem; letter-spacing: .2em;
+  text-transform: uppercase; padding: .16rem .45rem; border: 1.5px solid currentColor;
+  border-radius: 2px; transform: rotate(-6deg); opacity: .85; margin-top: .3rem;
+}
+.case-stamp.open { color: var(--ochre); }
+.case-stamp.resolved { color: var(--good); animation: stamp-pop .5s cubic-bezier(.2,.8,.2,1) both; }
+.case-stamp.clean { color: var(--ink-soft); }
+
+/* an act: a numbered rail (real sequence — you can't verify before applying) + its body */
+.act { display: grid; grid-template-columns: 8.5rem 1fr; gap: 1.4rem;
+  padding: 1.3rem 0; border-top: 1px solid var(--rule-2); margin-top: 1.2rem; }
+.act-rail { display: flex; flex-direction: column; gap: .2rem; }
+.act-num { font-family: var(--serif); font-size: 1.5rem; line-height: 1; color: var(--ochre-lt);
+  font-feature-settings: "smcp"; font-variant: small-caps; }
+.act-label { font-family: var(--mono); font-size: .64rem; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--ink-soft); }
+.act-body { min-width: 0; }
+.act-lede { margin: 0 0 .7rem; color: var(--ink); font-size: 1rem; }
+.act-lede em { font-style: italic; color: var(--oxblood); }
+.act-prose { margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.6; max-width: 58ch; }
+
+/* act ① — the colliding pairs, two names contending for one file */
+.clash-list { list-style: none; margin: 0; padding: 0; }
+.clash { display: grid; grid-template-columns: 1fr 1fr auto; align-items: baseline; gap: .7rem;
+  padding: .5rem 0; border-top: 1px solid var(--rule-2); }
+.clash:first-child { border-top: 0; }
+.clash-a { font-family: var(--serif); color: var(--ink-soft); }
+.clash-b { font-family: var(--serif); color: var(--ink); }
+.clash-slug { font-size: .78rem; color: var(--ochre); white-space: nowrap; }
+.clash-slug::before { content: "→ "; color: var(--ink-soft); }
+
+/* act ③ — the contract: the number we promise, then the ticks of what it costs */
+.contract { padding: .3rem 0 .2rem; }
+.contract-headline { display: flex; align-items: baseline; gap: .8rem; }
+.contract-n { font-family: var(--serif); font-weight: 600; font-size: 3.4rem; line-height: .9;
+  color: var(--ochre); font-variant-numeric: tabular-nums; }
+.contract-unit { font-family: var(--mono); font-size: .7rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-soft); line-height: 1.5; }
+.contract-ticks { list-style: none; margin: 1rem 0 1.2rem; padding: 0; }
+.contract-ticks li { font-size: .9rem; color: var(--ink-soft); padding: .25rem 0 .25rem 1rem;
+  position: relative; line-height: 1.4; }
+.contract-ticks li::before { content: "·"; position: absolute; left: .2rem; color: var(--ochre); }
+.contract-ticks .mono { color: var(--ink); }
+
+/* act ④ — the signature: the prediction, verified, row by row */
+.verify { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 1rem; }
+.verify-mark { font-size: 1.4rem; line-height: 1; }
+.verify.ok .verify-mark { color: var(--good); }
+.verify.warn .verify-mark { color: var(--ochre); }
+.verify-line { font-family: var(--serif); font-size: 1.15rem; color: var(--ink); }
+.verify-line strong { color: inherit; }
+.verify.ok .verify-line strong { color: var(--good); }
+
+.receipt { list-style: none; margin: 0 0 1rem; padding: 0; }
+.receipt-row { display: grid; grid-template-columns: 1.4rem 1fr auto 1fr auto; align-items: baseline;
+  gap: .6rem; padding: .45rem 0; border-top: 1px solid var(--rule-2); font-size: .94rem; }
+.receipt-row:first-child { border-top: 0; }
+.r-check { font-size: .92rem; }
+.receipt-row.ok .r-check { color: var(--good); }
+.receipt-row.held .r-check { color: var(--ochre); }
+.r-from { font-family: var(--serif); color: var(--ink-soft); text-align: right; }
+.r-arrow { color: var(--ochre); }
+.receipt-row.held .r-arrow { color: var(--ochre); }
+.r-into { font-family: var(--serif); color: var(--ink); font-weight: 600; }
+.r-note { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+
+.receipt-foot { display: flex; align-items: center; gap: 1rem; padding: .4rem 0 1.2rem; }
+.sha { font-size: .74rem; color: var(--ink-soft); letter-spacing: .06em; }
+.undo {
+  margin-left: auto; padding: .42rem 1rem; font-family: var(--mono); font-size: .66rem;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--oxblood); background: transparent;
+  border: 1.5px solid var(--oxblood); border-radius: 3px; cursor: pointer; transition: all .15s;
+}
+.undo:hover { background: var(--oxblood); color: var(--paper); }
+.undo:disabled { opacity: .45; cursor: default; }
+
+/* the human-judgement remainder — quiet, never auto-touched */
+.remainder { margin: 1.1rem 0 .4rem; border-top: 1px dashed var(--rule); padding-top: .7rem; }
+.remainder-head { font-size: .66rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-soft); margin-bottom: .3rem; }
+.remainder-row { display: grid; grid-template-columns: auto auto auto 1fr; align-items: baseline;
+  gap: .6rem; padding: .35rem 0; font-size: .88rem; }
+.remainder-row .r-from { text-align: left; color: var(--ink-soft); }
+.remainder-row .r-into { font-weight: 600; }
+.remainder-row .r-reason { font-size: .78rem; }
+
+/* lighter sections — Lint / Audit: the finding + a plain-language diagnosis, no remedy yet */
+.lighter { margin: 0 0 1.8rem; }
+.lighter-sub { font-size: .64rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-soft); margin-left: .6rem; }
+.findings { display: flex; flex-direction: column; gap: 0; margin-top: .3rem; }
+.finding { padding: .9rem 0; border-bottom: 1px solid var(--rule-2); }
+.finding-top { display: flex; align-items: baseline; gap: .8rem; }
+.finding-kind { font-family: var(--serif); font-size: 1.05rem; color: var(--ink);
+  text-transform: capitalize; }
+.finding-count { margin-left: auto; font-family: var(--mono); font-size: .74rem; color: var(--ochre); }
+.finding-why { margin: .3rem 0 .5rem; color: var(--ink-soft); font-size: .92rem; line-height: 1.5;
+  max-width: 60ch; }
+.finding-ev summary { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ochre); cursor: pointer; list-style: none; }
+.finding-ev summary::-webkit-details-marker { display: none; }
+.finding-ev summary::before { content: "▸ "; color: var(--ink-soft); }
+.finding-ev[open] summary::before { content: "▾ "; }
+.finding-ev ul { margin: .5rem 0 0 1.2rem; padding: 0; list-style: none; }
+.finding-ev li { font-size: .86rem; color: var(--ink-soft); padding: .2rem 0; line-height: 1.4; }
 .fg-ref { color: var(--ochre); font-size: .8rem; margin-right: .4rem; }
 
-.merge-plan { border-top: 1px solid var(--rule); margin: .4rem 0 1.2rem; }
-.merge-plan.skipped { opacity: .82; }
-.plan-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .7rem .2rem; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+/* one orchestrated motion: rows settle in, checks stamp, the resolved stamp pops */
+@keyframes settle { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+@keyframes stamp-in { from { opacity: 0; transform: scale(.3) rotate(-14deg); } to { opacity: 1; transform: none; } }
+@keyframes stamp-pop { 0% { opacity: 0; transform: rotate(-6deg) scale(.6); }
+  60% { transform: rotate(-6deg) scale(1.08); } 100% { opacity: .85; transform: rotate(-6deg) scale(1); } }
+.receipt.settling .receipt-row { animation: settle .4s cubic-bezier(.2,.7,.2,1) both; }
+.receipt.settling .r-check { display: inline-block; animation: stamp-in .35s cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  .case-stamp.resolved, .receipt.settling .receipt-row, .receipt.settling .r-check { animation: none; }
 }
-.merge-row {
-  display: flex; align-items: baseline; gap: .6rem; padding: .5rem .2rem;
-  border-top: 1px solid var(--rule); font-size: .92rem;
+
+@media (max-width: 640px) {
+  .act { grid-template-columns: 1fr; gap: .5rem; }
+  .act-rail { flex-direction: row; align-items: baseline; gap: .6rem; }
+  .clash, .receipt-row { grid-template-columns: 1fr; gap: .15rem; }
+  .r-from { text-align: left; }
 }
-.m-from { color: var(--ink-soft); }
-.m-arrow { color: var(--ochre); }
-.m-into { color: var(--ink); font-weight: 600; }
-.m-type { margin-left: .4rem; font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--ink-soft); }
-.m-reason { margin-left: auto; font-size: .76rem; }
-.action-msg { padding: .8rem .2rem; font-size: .82rem; color: var(--good); letter-spacing: .04em; }
 
 .admin-token { margin-top: 2rem; }
 .admin-token .at-note { max-width: 56ch; font-size: .86rem; margin: .2rem 0 .7rem; }

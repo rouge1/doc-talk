@@ -256,6 +256,19 @@ export interface MergeResult {
   sha: string | null;
 }
 
+export interface UndoResult {
+  undone: { src: string; dst: string }[];
+  count: number;
+  sha: string | null;
+}
+
+// The most recent reversible merge batch — lets the receipt + Undo survive a page reload.
+export interface RecentBatch {
+  sha: string | null;
+  count: number;
+  merges: { id: number; src: string; dst: string }[];
+}
+
 // The admin token (for the gated mutating actions) lives in this browser only — sent as a header,
 // never in a URL. Empty while the server's gate is open (DOCTALK_ADMIN_TOKEN unset).
 const ADMIN_KEY = "doctalk-admin-token";
@@ -271,11 +284,16 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function post<T>(path: string): Promise<T> {
+async function post<T>(path: string, body?: unknown): Promise<T> {
   const token = getAdminToken();
   const res = await fetch(path, {
     method: "POST",
-    headers: { Accept: "application/json", ...(token ? { "X-Admin-Token": token } : {}) },
+    headers: {
+      Accept: "application/json",
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { "X-Admin-Token": token } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (res.status === 401) throw new Error("401 admin token required");
   if (!res.ok) throw new Error(`${res.status} ${path}`);
@@ -287,6 +305,8 @@ export const api = {
   maintenanceAudit: () => get<Findings>("/api/maintenance/audit"),
   slugCollisions: () => get<CollisionPlan>("/api/maintenance/slug-collisions"),
   applyCollisions: () => post<MergeResult>("/api/maintenance/merge-collisions"),
+  recentMerges: () => get<RecentBatch>("/api/maintenance/recent-merges"),
+  undoMerge: (sha: string) => post<UndoResult>("/api/maintenance/undo-merge", { sha }),
   stats: () => get<Stats>("/api/stats"),
   library: () => get<Library>("/api/library"),
   wiki: () => get<WikiIndex>("/api/wiki"),
