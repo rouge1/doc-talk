@@ -181,11 +181,20 @@ function CollisionCase({
 
   // 2) Work to do → the briefing (acts ① ② ③).
   if (mergeable.length > 0) {
+    const before = mergeable.length + skipped.length; // every colliding pair today
+    const after = skipped.length; // what the heal leaves behind — the human-judgement cases
     return (
       <Case
         state="open"
         title="Slug collisions"
         dek={`${mergeable.length} duplicate ${mergeable.length === 1 ? "page" : "pages"} would be overwritten, the original lost.`}
+        action={
+          <button className="action" disabled={busy !== null} onClick={onApply}>
+            {busy === "apply"
+              ? "Merging…"
+              : `Apply ${mergeable.length} merge${mergeable.length === 1 ? "" : "s"}`}
+          </button>
+        }
       >
         <Act n="One" label="What's wrong">
           <p className="act-lede">
@@ -204,26 +213,30 @@ function CollisionCase({
 
         <Act n="Three" label="What fixing it does">
           <div className="contract">
-            <div className="contract-headline">
-              <span className="contract-n tnum">{mergeable.length}</span>
-              <span className="contract-unit">
-                duplicate {mergeable.length === 1 ? "page folds" : "pages fold"}
-                <br />
-                into {mergeable.length === 1 ? "its original" : "their originals"}
-              </span>
+            <div className="contract-delta">
+              <span className="delta-eyebrow mono">slug collisions</span>
+              <div className="delta-grid">
+                <span className="contract-n tnum">{before}</span>
+                <span className="delta-arrow">→</span>
+                <span className="contract-n tnum">{after}</span>
+                <span className="delta-sub mono">now</span>
+                <span aria-hidden="true" />
+                <span className="delta-sub mono">after this heal</span>
+              </div>
             </div>
             <ul className="contract-ticks">
               <li>
-                <span className="mono">−{mergeable.length}</span> page{mergeable.length === 1 ? "" : "s"}, each duplicate's claims preserved on the survivor
+                {mergeable.length} duplicate {mergeable.length === 1 ? "page folds" : "pages fold"} —
+                every claim kept on the survivor
               </li>
-              <li>
-                <span className="mono">{skipped.length}</span> genuinely different — left for a human, never touched
-              </li>
-              <li>reversible — one button puts it all back</li>
+              {skipped.length > 0 && (
+                <li>
+                  the {skipped.length} that {skipped.length === 1 ? "remains is" : "remain are"}{" "}
+                  genuinely different — a human's call
+                </li>
+              )}
+              <li>reversible — one button undoes the whole batch</li>
             </ul>
-            <button className="action" disabled={busy !== null} onClick={onApply}>
-              {busy === "apply" ? "Merging…" : `Apply ${mergeable.length} merge${mergeable.length === 1 ? "" : "s"}`}
-            </button>
           </div>
           <ManualRemainder skipped={skipped} />
         </Act>
@@ -366,11 +379,13 @@ function Case({
   state,
   title,
   dek,
+  action,
   children,
 }: {
   state: "open" | "resolved" | "clean";
   title: string;
   dek: string;
+  action?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const stamp = { open: "Open", resolved: "Resolved", clean: "Clear" }[state];
@@ -382,7 +397,10 @@ function Case({
           <h2 className="case-title">{title}</h2>
           <p className="case-dek">{dek}</p>
         </div>
-        <span className={`case-stamp ${state}`}>{stamp}</span>
+        <div className="case-head-right">
+          <span className={`case-stamp ${state}`}>{stamp}</span>
+          {action}
+        </div>
       </header>
       {children}
     </section>
