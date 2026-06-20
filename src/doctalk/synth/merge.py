@@ -88,14 +88,21 @@ def _claim_count(session, entity_id: int) -> int:
 
 
 def plan_slug_collision_merges(session) -> tuple[list[tuple[Entity, Entity]], list[tuple[Entity, Entity, str]]]:
-    """Propose merges for active entities that share a slug. Per colliding slug the survivor is the
-    richest member (most claims, tie -> source_count, tie -> lowest id); each other member is merged
-    into it ONLY when their merge keys match (underscore/space-insensitive) AND types are compatible.
-    Otherwise the pair is reported as skipped with a reason, never auto-merged.
+    """Propose merges for active entities that share a slug. Per colliding slug the survivor is, by
+    preference, the member already named the clean canonical form (so it keeps that title with no
+    rename and no (name,type) clash) when that member is a compatible merge partner of the richest;
+    otherwise the richest (most claims, tie -> source_count, tie -> lowest id). Each other member is
+    merged into the survivor ONLY when their merge keys match (underscore/space-insensitive) AND types
+    are compatible; otherwise the pair is skipped with a reason, never auto-merged.
 
     Returns ``(mergeable, skipped)`` where mergeable items are ``(src, dst)`` and skipped items are
     ``(src, dst, reason)``. Read-only — the caller decides whether to apply."""
     from doctalk.synth.resolve import _types_compatible
+
+    def _mergeable(a: Entity, b: Entity) -> bool:
+        return merge_key(a.norm_key) == merge_key(b.norm_key) and (
+            _types_compatible(a.type, b.type) or _types_compatible(b.type, a.type)
+        )
 
     groups: dict[str, list[Entity]] = defaultdict(list)
     for e in session.scalars(select(Entity).where(Entity.status == "active")):
@@ -106,7 +113,14 @@ def plan_slug_collision_merges(session) -> tuple[list[tuple[Entity, Entity]], li
     for es in groups.values():
         if len(es) < 2:
             continue
-        survivor = max(es, key=lambda e: (_claim_count(session, e.id), e.source_count, -e.id))
+        richest = max(es, key=lambda e: (_claim_count(session, e.id), e.source_count, -e.id))
+        # If a member already carries the clean canonical title and can merge with the richest, let it
+        # survive — no rename, and the merge can't collide with its own partner's (name, type).
+        canon = canonical_display_name([e.name for e in es])
+        survivor = next(
+            (e for e in es if e.name == canon and e.id != richest.id and _mergeable(e, richest)),
+            richest,
+        )
         for e in es:
             if e.id == survivor.id:
                 continue

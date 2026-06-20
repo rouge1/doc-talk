@@ -135,6 +135,52 @@ def test_merge_records_manifest_then_unmerge_restores_exactly(db):
         assert repo.get_entity_merges(s) == []                                  # record consumed
 
 
+def test_clean_named_sibling_survives_so_no_rename_clash(db, stub_resolve):
+    """Regression for the (name,type) UNIQUE crash: when one colliding spelling is already the clean
+    canonical form, it survives (even with fewer claims) so the title is reached by selection, not a
+    rename that would collide with its own merge partner."""
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        fid = _file(s)
+        under = _ent(s, "Packet_Type", "packet type", fid=fid, n_claims=3)   # richer, but underscored
+        clean = _ent(s, "Packet Type", "packet type", fid=fid, n_claims=1)   # the clean spelling
+        path = f"entities/{pages.slug_for(under)}.md"
+        wikirepo.write_page(path, pages.render_entity_page(s, under))
+        repo.upsert_wiki_page(s, path=path, title=under.name, kind="entity", entity_id=under.id)
+        under.wiki_path = clean.wiki_path = path
+        under_id, clean_id = under.id, clean.id
+
+    with session_scope() as s:
+        plan_m, _ = merge.plan_slug_collision_merges(s)
+        assert any(src.id == under_id and dst.id == clean_id for src, dst in plan_m)  # clean one wins
+
+    with session_scope() as s:
+        applied, _ = merge.merge_slug_collisions(s)   # must not raise the UNIQUE IntegrityError
+        assert applied and all(dname == "Packet Type" for _s, dname, _m in applied)
+
+    with session_scope() as s:
+        assert s.get(Entity, clean_id).status == "active"
+        assert s.get(Entity, clean_id).name == "Packet Type"        # clean title, reached by selection
+        assert s.get(Entity, under_id).status == "merged_into"      # the richer underscored one folded
+
+
+def test_merge_rename_skips_when_target_name_is_taken(db):
+    """The guard: asking to rename the survivor to a name another (name,type) already owns keeps the
+    survivor's current title rather than violating the UNIQUE index."""
+    with session_scope() as s:
+        fid = _file(s)
+        src = _ent(s, "widget", "widget", fid=fid, n_claims=1)
+        dst = _ent(s, "Widget_X", "widget x", fid=fid, n_claims=2)
+        _ent(s, "Taken Name", "taken name")          # already owns (Taken Name, component)
+        src_id, dst_id = src.id, dst.id
+
+    with session_scope() as s:
+        repo.merge_entities(s, src_id, dst_id, display_name="Taken Name")  # must not raise
+
+    with session_scope() as s:
+        assert s.get(Entity, dst_id).name == "Widget_X"   # rename declined, title unchanged
+
+
 def test_unmerge_refuses_manifestless_merge(db):
     """A merge row from before undo tracking has no manifest — unmerge refuses rather than guess
     which of the survivor's claims to peel off (guessing would corrupt both entities)."""

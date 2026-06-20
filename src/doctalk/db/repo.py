@@ -746,9 +746,15 @@ def merge_entities(
 
     renamed_from = None
     if display_name and display_name != dst.name:
-        renamed_from = dst.name
-        dst.aliases = list(dict.fromkeys([*dst.aliases, dst.name]))  # keep the old name reachable
-        dst.name = display_name
+        # Only rename if the clean title isn't already owned by another (name, type) row — otherwise
+        # we'd violate the UNIQUE index. The common would-be clash is the very sibling being folded
+        # (it already carries the clean spelling); there we keep the survivor's current title rather
+        # than crash. (The planner usually avoids this by electing the clean-named member as survivor.)
+        clash = find_entity_by_name_type(session, display_name, dst.type)
+        if clash is None or clash.id == into_id:
+            renamed_from = dst.name
+            dst.aliases = list(dict.fromkeys([*dst.aliases, dst.name]))  # keep the old name reachable
+            dst.name = display_name
 
     src.status = "merged_into"
     src.wiki_path = dst.wiki_path  # redirect
