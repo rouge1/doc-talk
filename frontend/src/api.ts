@@ -299,6 +299,62 @@ export interface RecentSplits {
   entities: SplitEntity[];
 }
 
+// --- Duplicates triage (read-only plan: score every near-duplicate pair, sort into bands) ---------
+
+export interface DupPair {
+  a: { id: number; name: string; stem: string | null };
+  b: { id: number; name: string; stem: string | null };
+  score: number;
+  signals: { lexical: number; embed: number; comention: number; alias: number };
+}
+
+// --- Pair comparison (the evidence a human reads to judge same-or-different) -----------------------
+
+export interface EvidencePassage {
+  file: string | null;
+  content_hash: string | null;
+  page: number;
+  chunk_id: number;
+  chapter_id: number | null;
+  text: string;
+}
+
+export interface EvidenceSide {
+  id: number;
+  name: string;
+  type: string;
+  stem: string;
+  aliases: string[];
+  sources: number;
+  claims: number;
+  terms: string[]; // the surface forms to highlight in the passages
+  passages: EvidencePassage[];
+}
+
+export interface ComparePair {
+  score: number;
+  band: "fold" | "judge" | "aside";
+  signals: { lexical: number; embed: number; comention: number; alias: number };
+  a: EvidenceSide;
+  b: EvidenceSide;
+}
+
+export interface DupBand {
+  key: "fold" | "judge" | "aside";
+  verb: string; // what would happen to this band
+  gloss: string; // why
+  count: number;
+  sample: DupPair[];
+}
+
+export interface DuplicatePlan {
+  total: number;
+  cuts: { judge: number; fold: number }; // the two score thresholds that divide the bands
+  bands: DupBand[];
+  scores: number[]; // every pair's composite score, for the confidence gauge
+  pairs?: DupPair[]; // every scored pair, so dragging the cuts can re-bucket the samples live
+}
+
 // The admin token (for the gated mutating actions) lives in this browser only — sent as a header,
 // never in a URL. Empty while the server's gate is open (DOCTALK_ADMIN_TOKEN unset).
 const ADMIN_KEY = "doctalk-admin-token";
@@ -334,6 +390,9 @@ export const api = {
   maintenanceLint: () => get<Findings>("/api/maintenance/lint"),
   maintenanceAudit: () => get<Findings>("/api/maintenance/audit"),
   slugCollisions: () => get<CollisionPlan>("/api/maintenance/slug-collisions"),
+  duplicates: () => get<DuplicatePlan>("/api/maintenance/duplicates"),
+  comparePair: (a: number, b: number) =>
+    get<ComparePair>(`/api/maintenance/compare?a=${a}&b=${b}`),
   applyCollisions: () => post<MergeResult>("/api/maintenance/merge-collisions"),
   recentMerges: () => get<RecentBatch>("/api/maintenance/recent-merges"),
   undoMerge: (sha: string) => post<UndoResult>("/api/maintenance/undo-merge", { sha }),

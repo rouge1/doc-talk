@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import {
   api,
   getAdminToken,
   setAdminToken,
   type CollisionPlan,
+  type DupBand,
+  type DuplicatePlan,
   type Findings,
   type RecentBatch,
   type RecentSplits,
@@ -12,6 +15,10 @@ import { useFetch } from "../useFetch";
 
 // Which mutating action is in flight — every button disables while any one runs (one op at a time).
 type Busy = null | "apply" | "undo" | "split" | "unsplit";
+
+// An action's outcome, filed under the case it belongs to. Tone reads it at a glance: done (green),
+// undone (a reversal, amber), error (oxblood).
+type Note = { text: string; tone: "done" | "undone" | "error" } | null;
 
 // The disambiguation half of the slug-collision case, bundled so it threads cleanly into the acts.
 interface HumanWork {
@@ -42,22 +49,45 @@ interface LiveReceipt {
 export default function Maintenance() {
   const [tick, setTick] = useState(0);
   const refresh = () => setTick((t) => t + 1);
+  const location = useLocation();
+  const dupRef = useRef<HTMLDivElement>(null);
+  const scrolledHash = useRef<string | null>(null);
   const plan = useFetch<CollisionPlan>(() => api.slugCollisions(), `plan-${tick}`);
   const recent = useFetch<RecentBatch>(() => api.recentMerges(), `recent-${tick}`);
   const splits = useFetch<RecentSplits>(() => api.recentSplits(), `splits-${tick}`);
+  const dups = useFetch<DuplicatePlan>(() => api.duplicates(), `dups-${tick}`);
   const lint = useFetch<Findings>(() => api.maintenanceLint(), `lint-${tick}`);
   const audit = useFetch<Findings>(() => api.maintenanceAudit(), `audit-${tick}`);
 
   const [live, setLive] = useState<LiveReceipt | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<Note>(null);
+
+  // Arriving from a compare via #duplicates: drop straight onto the band list, not the page top. The
+  // duplicates plan is cached now, so it resolves *first* — if we scrolled then, the collision case
+  // above would finish loading a beat later, grow, and shove the band list back off-screen (reads as a
+  // jump to the top). So wait until everything above the band list has settled, then scroll once.
+  useEffect(() => {
+    const aboveSettled = !plan.loading && !recent.loading && !splits.loading && !dups.loading;
+    if (
+      location.hash === "#duplicates" &&
+      aboveSettled &&
+      dupRef.current &&
+      scrolledHash.current !== location.key
+    ) {
+      scrolledHash.current = location.key; // once per arrival, even if later fetches re-render
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      dupRef.current.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    }
+  }, [location.hash, location.key, plan.loading, recent.loading, splits.loading, dups.loading]);
 
   const fail = (e: unknown) =>
-    setNote(
-      String(e).includes("401")
+    setNote({
+      text: String(e).includes("401")
         ? "This needs the admin token — set it below, then try again."
         : `Couldn't finish: ${e}`,
-    );
+      tone: "error",
+    });
 
   const apply = async () => {
     if (!plan.data) return;
@@ -86,7 +116,10 @@ export default function Maintenance() {
     try {
       const res = await api.undoMerge(sha);
       setLive(null);
-      setNote(`Reverted ${res.count} merge${res.count === 1 ? "" : "s"} — back to where we started.`);
+      setNote({
+        text: `Reverted ${res.count} merge${res.count === 1 ? "" : "s"} — back to where we started.`,
+        tone: "undone",
+      });
       refresh();
     } catch (e) {
       fail(e);
@@ -101,11 +134,13 @@ export default function Maintenance() {
     setNote(null);
     try {
       const res = await api.disambiguate();
-      setNote(
-        res.count === 0
-          ? "Nothing to split — those pages already have unique slugs."
-          : `Split ${res.count} ${res.count === 1 ? "page" : "pages"} onto ${res.count === 1 ? "its" : "their"} own slug.`,
-      );
+      setNote({
+        text:
+          res.count === 0
+            ? "Nothing to split — those pages already have unique slugs."
+            : `Split ${res.count} ${res.count === 1 ? "page" : "pages"} onto ${res.count === 1 ? "its" : "their"} own slug.`,
+        tone: "done",
+      });
       refresh();
     } catch (e) {
       fail(e);
@@ -119,7 +154,10 @@ export default function Maintenance() {
     setNote(null);
     try {
       const res = await api.undoDisambiguate(ids);
-      setNote(`Folded ${res.count} ${res.count === 1 ? "page" : "pages"} back onto the shared slug.`);
+      setNote({
+        text: `Folded ${res.count} ${res.count === 1 ? "page" : "pages"} back onto the shared slug.`,
+        tone: "undone",
+      });
       refresh();
     } catch (e) {
       fail(e);
@@ -170,7 +208,19 @@ export default function Maintenance() {
         onUndo={undo}
         human={human}
       />
-      {note && <div className="action-msg mono">{note}</div>}
+      {note && (
+        <div className={`outcome ${note.tone}`} role="status">
+          <span className="outcome-mark mono" aria-hidden="true">
+            {note.tone === "error" ? "!" : note.tone === "undone" ? "↺" : "✓"}
+          </span>
+          <span className="outcome-text">{note.text}</span>
+        </div>
+      )}
+
+      {/* scroll-margin clears the sticky masthead so #duplicates lands with the case's top edge visible */}
+      <div id="duplicates" ref={dupRef} style={{ scrollMarginTop: "5rem" }}>
+        <DuplicatesCase state={dups} />
+      </div>
 
       <LighterSection title="Lint" sub="health check" state={lint} />
       <LighterSection title="Audit" sub="wiki ↔ truth" state={audit} />
@@ -451,14 +501,16 @@ function Case({
   state,
   title,
   dek,
+  stamp,
   children,
 }: {
   state: "open" | "resolved" | "clean";
   title: string;
   dek: string;
+  stamp?: string; // overrides the state's default word (e.g. "Triage" for a read-only survey)
   children?: React.ReactNode;
 }) {
-  const stamp = { open: "Open", resolved: "Resolved", clean: "Clear" }[state];
+  const word = stamp ?? { open: "Open", resolved: "Resolved", clean: "Clear" }[state];
   return (
     <section className={`case ${state}`}>
       <header className="case-head">
@@ -467,7 +519,7 @@ function Case({
           <h2 className="case-title">{title}</h2>
           <p className="case-dek">{dek}</p>
         </div>
-        <span className={`case-stamp ${state}`}>{stamp}</span>
+        <span className={`case-stamp ${state}`}>{word}</span>
       </header>
       {children}
     </section>
@@ -587,6 +639,229 @@ function HumanCases({
   );
 }
 
+// --- duplicates: a read-only triage of the 255 near-duplicates, before any merge tool exists ------
+
+function DuplicatesCase({
+  state,
+}: {
+  state: { data: DuplicatePlan | null; error: string | null; loading: boolean };
+}) {
+  if (state.loading && !state.data)
+    return <Case state="open" stamp="Triage" title="Duplicates" dek="Scoring the near-duplicates…" />;
+  if (state.error || !state.data)
+    return (
+      <Case state="open" stamp="Triage" title="Duplicates" dek="Couldn't score the duplicates — is the API up?" />
+    );
+  return <DuplicatesPlan plan={state.data} />;
+}
+
+const BAND_KEYS = ["fold", "judge", "aside"] as const;
+
+// Live triage: the two gauge cuts are draggable. Band *counts* re-bucket from `scores` (always sent);
+// *samples* re-bucket from `pairs` when the API sends them, else fall back to the server's default-cut
+// sample. Read-only — nothing is merged; this only tunes where the bands fall before a heal is wired up.
+function DuplicatesPlan({ plan }: { plan: DuplicatePlan }) {
+  const [judge, setJudge] = useState(plan.cuts.judge);
+  const [fold, setFold] = useState(plan.cuts.fold);
+  const dirty = judge !== plan.cuts.judge || fold !== plan.cuts.fold;
+  const reset = () => {
+    setJudge(plan.cuts.judge);
+    setFold(plan.cuts.fold);
+  };
+
+  const bandOf = (s: number) => (s >= fold ? "fold" : s >= judge ? "judge" : "aside");
+  const meta = Object.fromEntries(plan.bands.map((b) => [b.key, b])) as Record<string, DupBand>;
+  const count = (key: string) => plan.scores.filter((s) => bandOf(s) === key).length;
+  const sampleOf = (key: string) =>
+    plan.pairs?.length
+      ? plan.pairs.filter((p) => bandOf(p.score) === key).slice(0, 6)
+      : meta[key]?.sample ?? [];
+  const foldCount = count("fold");
+
+  return (
+    <Case
+      state="open"
+      stamp="Triage"
+      title="Duplicates"
+      dek={`${plan.total} pairs share a name — but the signals say most are look-alikes, not the same entity.`}
+    >
+      <ConfidenceGauge
+        scores={plan.scores}
+        judge={judge}
+        fold={fold}
+        defaults={plan.cuts}
+        onJudge={setJudge}
+        onFold={setFold}
+      />
+      <div className="bands">
+        {BAND_KEYS.map((key) => (
+          <BandRow key={key} bandKey={key} meta={meta[key]} count={count(key)} sample={sampleOf(key)} />
+        ))}
+      </div>
+      <p className="band-foot muted">
+        {dirty ? (
+          <>
+            Tuned to {judge.toFixed(2)} / {fold.toFixed(2)} —{" "}
+            <button type="button" className="linklike" onClick={reset}>
+              reset to {plan.cuts.judge.toFixed(2)} / {plan.cuts.fold.toFixed(2)}
+            </button>
+            . Dragging only previews the split; nothing is merged.
+          </>
+        ) : (
+          <>
+            A read-only plan — scored with the resolver's own signals, not yet merged.{" "}
+            {foldCount === 0
+              ? "Nothing's confident enough to fold on its own."
+              : `Only ${foldCount} ${foldCount === 1 ? "pair is" : "pairs are"} confident enough to fold on ${foldCount === 1 ? "its" : "their"} own.`}{" "}
+            Drag the gauge handles to tune the bands.
+          </>
+        )}
+      </p>
+    </Case>
+  );
+}
+
+// The signature: every pair as a tick along a confidence axis, the two decision thresholds drawn in as
+// draggable handles. The pile-up at the low end is the point — most "duplicates" are really look-alikes.
+function ConfidenceGauge({
+  scores,
+  judge,
+  fold,
+  onJudge,
+  onFold,
+}: {
+  scores: number[];
+  judge: number;
+  fold: number;
+  defaults: { judge: number; fold: number };
+  onJudge: (v: number) => void;
+  onFold: (v: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  if (scores.length === 0) return null;
+  const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+  // Clip the axis to the populated score range (+ a small margin) so the distribution fills the width
+  // rather than stranding empty ends; the handle labels keep the absolute scale readable.
+  const lo = Math.max(0, Math.min(...scores) - 0.04);
+  const hi = Math.min(1, Math.max(...scores) + 0.04);
+  const pos = (s: number) => ((clamp(s, lo, hi) - lo) / (hi - lo)) * 100;
+  const zone = (a: number, b: number) => ({ left: `${pos(a)}%`, width: `${pos(b) - pos(a)}%` });
+  const bandOf = (s: number) => (s >= fold ? "fold" : s >= judge ? "judge" : "aside");
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+
+  // A cut stays inside the axis and never crosses its neighbour (judge below fold, by at least 0.01).
+  const setCut = (which: "judge" | "fold", v: number) =>
+    which === "judge" ? onJudge(clamp(v, lo, round2(fold - 0.01))) : onFold(clamp(v, round2(judge + 0.01), hi));
+
+  const drag = (which: "judge" | "fold") => (e: React.PointerEvent) => {
+    e.preventDefault();
+    const at = (clientX: number) => {
+      const r = trackRef.current?.getBoundingClientRect();
+      if (!r || r.width === 0) return;
+      setCut(which, round2(lo + clamp((clientX - r.left) / r.width, 0, 1) * (hi - lo)));
+    };
+    at(e.clientX);
+    const move = (ev: PointerEvent) => at(ev.clientX);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const onKey = (which: "judge" | "fold") => (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.05 : 0.01;
+    const d = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+    if (!d) return;
+    e.preventDefault();
+    setCut(which, round2((which === "judge" ? judge : fold) + d));
+  };
+
+  // Inlined (not a child component) so the buttons keep their identity across renders and don't lose
+  // focus mid-drag / mid-keypress.
+  const handle = (which: "judge" | "fold", value: number) => (
+    <button
+      type="button"
+      className={`gauge-handle ${which}`}
+      style={{ left: `${pos(value)}%` }}
+      onPointerDown={drag(which)}
+      onKeyDown={onKey(which)}
+      role="slider"
+      aria-label={which === "judge" ? "Look-alike to judge cut" : "Judge to fold cut"}
+      aria-valuemin={which === "judge" ? round2(lo) : judge}
+      aria-valuemax={which === "judge" ? fold : round2(hi)}
+      aria-valuenow={value}
+    >
+      <i className="mono">{value.toFixed(2)}</i>
+    </button>
+  );
+
+  return (
+    <div className="gauge">
+      <div className="gauge-scale" ref={trackRef}>
+        <span className="gauge-zone aside" style={zone(lo, judge)} />
+        <span className="gauge-zone judge" style={zone(judge, fold)} />
+        <span className="gauge-zone fold" style={zone(fold, hi)} />
+        {scores.map((s, i) => (
+          <span className={`gauge-tick ${bandOf(s)}`} style={{ left: `${pos(s)}%` }} key={i} />
+        ))}
+        {handle("judge", judge)}
+        {handle("fold", fold)}
+      </div>
+      <div className="gauge-axis mono">
+        <span>look-alike</span>
+        <span>same entity</span>
+      </div>
+    </div>
+  );
+}
+
+function BandRow({
+  bandKey,
+  meta,
+  count,
+  sample,
+}: {
+  bandKey: string;
+  meta: DupBand | undefined;
+  count: number;
+  sample: DupBand["sample"];
+}) {
+  if (!meta) return null;
+  return (
+    <div className={`band ${bandKey}`}>
+      <div className="band-head">
+        <span className="band-n tnum">{count}</span>
+        <div className="band-said">
+          <span className="band-verb">{meta.verb}</span>
+          <span className="band-gloss muted">{meta.gloss}</span>
+        </div>
+      </div>
+      {sample.length > 0 && (
+        <details className="band-ev">
+          <summary>show examples</summary>
+          <ul>
+            {sample.map((p, i) => (
+              <li key={i}>
+                <Link className="band-pair" to={`/maintenance/compare/${p.a.id}/${p.b.id}`}>
+                  <span className="r-from">{p.a.name}</span>
+                  <span className="r-arrow mono">~</span>
+                  <span className="r-into">{p.b.name}</span>
+                  <span className="band-score mono">{p.score.toFixed(2)}</span>
+                  <span className="band-go mono" aria-hidden="true">
+                    compare →
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 // --- lighter sections (Lint / Audit): the finding + a plain diagnosis, no remedy yet -------------
 
 const DIAGNOSIS: Record<string, string> = {
@@ -596,7 +871,7 @@ const DIAGNOSIS: Record<string, string> = {
   deleted_page: "The catalog points at a page file that's gone from disk. Run wiki-lint --fix to reconcile the two.",
   unresolved: "A provisional page the resolver couldn't place. It's waiting on a human's same-or-different call.",
   slug_collision: "Two entities share one page filename — handled in the case above, which folds the safe ones.",
-  duplicate: "Looks like a near-duplicate of another entity. A merge would join their claims onto one page.",
+  duplicate: "Near-duplicate entities by name. Triaged in the Duplicates case above — most turn out to be look-alikes.",
 };
 const diagnose = (kind: string) =>
   DIAGNOSIS[kind] ?? "Flagged by the linter — review the evidence below.";

@@ -13,6 +13,7 @@ import Reader from "./routes/Reader";
 import PageView from "./routes/PageView";
 import Passage from "./routes/Passage";
 import Maintenance from "./routes/Maintenance";
+import Compare from "./routes/Compare";
 
 function Masthead() {
   return (
@@ -48,6 +49,7 @@ export default function App() {
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/wiki" element={<Wiki />} />
           <Route path="/maintenance" element={<Maintenance />} />
+          <Route path="/maintenance/compare/:a/:b" element={<Compare />} />
           <Route path="/wiki/source/:stem" element={<Source />} />
           <Route path="/wiki/entity/:stem" element={<Entity />} />
           <Route path="/wiki/query/:stem" element={<Query />} />

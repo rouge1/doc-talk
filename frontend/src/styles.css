@@ -499,7 +499,9 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .case-head .kicker { margin-bottom: .35rem; }
 .case-title { font-family: var(--serif); font-weight: 600; font-size: 1.7rem; line-height: 1.05;
   margin: 0; color: var(--ink); }
-.case-dek { margin: .4rem 0 0; color: var(--ink-soft); font-size: 1.02rem; max-width: 52ch; }
+/* A dek is a standfirst, not body copy — let it run as one assured line under the title (the head's
+   flex row caps its width against the stamp), rather than wrapping to a hyphenated orphan. */
+.case-dek { margin: .4rem 0 0; color: var(--ink-soft); font-size: 1.02rem; }
 /* the accession stamp, reused: a tilted ruled chip whose word + colour read the case state */
 .case-stamp {
   flex: none; font-family: var(--mono); font-size: .62rem; letter-spacing: .2em;
@@ -622,6 +624,154 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .split-slug { font-size: .8rem; color: var(--ochre); }
 .manual-left { margin-top: .8rem; }
 
+/* the outcome slip — an action's result, filed flush under the case it belongs to (not a free toast).
+   It borrows the case's left-rule + card so it reads as the same document; tone carries the verdict.
+   Namespaced .outcome (not .result) so it can't collide with the search-results card of the same name. */
+.outcome { display: flex; align-items: baseline; gap: .6rem; margin: -2rem 0 2.4rem 0;
+  padding: .65rem .9rem; background: var(--card); border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink-soft); border-top: 0; border-radius: 0 0 3px 3px;
+  box-shadow: 4px 7px 0 rgba(33,29,23,.05); font-size: .9rem; }
+.outcome.done { border-left-color: var(--good); }
+.outcome.undone { border-left-color: var(--ochre); }
+.outcome.error { border-left-color: var(--oxblood); }
+.outcome-mark { font-weight: 700; font-size: .8rem; }
+.outcome.done .outcome-mark { color: var(--good); }
+.outcome.undone .outcome-mark { color: var(--ochre); }
+.outcome.error .outcome-mark { color: var(--oxblood); }
+.outcome-text { color: var(--ink); }
+
+/* duplicates — the confidence gauge (signature) + the three triage bands. Read-only: no buttons. */
+.gauge { margin: 1.2rem 0 1.7rem; }
+.gauge-scale { position: relative; height: 44px; }
+.gauge-zone { position: absolute; top: 0; bottom: 16px; opacity: .17; }
+.gauge-zone.aside { background: var(--ink-soft); }
+.gauge-zone.judge { background: var(--ochre); }
+.gauge-zone.fold { background: var(--good); }
+.gauge-tick { position: absolute; top: 3px; height: 25px; width: 1px; margin-left: -.5px; opacity: .55; }
+.gauge-tick.aside { background: var(--ink-soft); }
+.gauge-tick.judge { background: var(--ochre); }
+/* fold is the only actionable band (10 of 255) — let those ticks assert themselves */
+.gauge-tick.fold { background: var(--good); opacity: .9; width: 2px; margin-left: -1px; }
+/* The two thresholds are draggable handles: a thin line, a grab knob on top, the live value below.
+   18px-wide transparent hit area around the 2px line so it's easy to grab; touch-action:none for drag. */
+.gauge-handle { position: absolute; top: -5px; bottom: 16px; width: 18px; margin-left: -9px;
+  background: transparent; border: 0; padding: 0; cursor: ew-resize; touch-action: none; z-index: 2; }
+/* line starts at the knob's bottom edge (knob is top:-8px h:14px -> bottom +6px) so it drops cleanly
+   out of the grip into the bar, instead of piercing up through it */
+.gauge-handle::after { content: ""; position: absolute; top: 6px; bottom: 0; left: 50%; width: 2px;
+  margin-left: -1px; background: var(--ink); opacity: .72; }
+.gauge-handle::before { content: ""; position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+  width: 15px; height: 14px; border-radius: 3px; border: 1.5px solid var(--ink);
+  background-color: var(--paper);
+  background-image: linear-gradient(var(--ink-soft), var(--ink-soft)), linear-gradient(var(--ink-soft), var(--ink-soft));
+  background-size: 1.5px 6px, 1.5px 6px; background-repeat: no-repeat;
+  background-position: calc(50% - 2.5px) center, calc(50% + 2.5px) center;  /* two-bar grip = "drag me" */
+  box-shadow: 1px 1px 0 rgba(33,29,23,.12); }
+.gauge-handle:hover::after, .gauge-handle:focus-visible::after { opacity: 1; }
+.gauge-handle:hover::before, .gauge-handle:focus-visible::before { border-color: var(--ochre); }
+.gauge-handle:focus-visible { outline: 2px solid var(--ochre); outline-offset: 1px; border-radius: 3px; }
+.gauge-handle i { position: absolute; bottom: -15px; left: 50%; transform: translateX(-50%);
+  font-size: .6rem; font-style: normal; color: var(--ink-soft); white-space: nowrap; }
+.linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--ochre);
+  cursor: pointer; text-decoration: underline; }
+.linklike:hover { color: var(--oxblood); }
+.gauge-axis { display: flex; justify-content: space-between; margin-top: .15rem;
+  font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
+
+.bands { display: flex; flex-direction: column; }
+.band { padding: .95rem 0; border-top: 1px solid var(--rule-2); }
+.band:first-child { border-top: 0; }
+.band-head { display: flex; align-items: baseline; gap: 1rem; }
+.band-n { font-family: var(--serif); font-size: 1.7rem; line-height: 1; min-width: 2.6rem; }
+.band.fold .band-n { color: var(--good); }
+.band.judge .band-n { color: var(--ochre); }
+.band.aside .band-n { color: var(--ink-soft); }
+.band-said { display: flex; flex-direction: column; gap: .12rem; }
+.band-verb { font-family: var(--serif); font-size: 1.08rem; color: var(--ink); }
+.band-gloss { font-size: .84rem; }
+.band-ev { margin-left: 3.6rem; }
+.band-ev summary { font-family: var(--mono); font-size: .66rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ochre); cursor: pointer; list-style: none; margin-top: .5rem; }
+.band-ev summary::-webkit-details-marker { display: none; }
+.band-ev summary::before { content: "▸ "; color: var(--ink-soft); }
+.band-ev[open] summary::before { content: "▾ "; }
+.band-ev ul { list-style: none; margin: .45rem 0 0; padding: 0; }
+/* each pair links to its side-by-side comparison — read both contexts, judge same-or-different */
+.band-pair { display: grid; grid-template-columns: 1fr auto 1fr auto auto; align-items: baseline;
+  gap: .6rem; padding: .3rem .4rem; font-size: .88rem; text-decoration: none; color: inherit;
+  border-radius: 2px; transition: background .12s; }
+.band-pair:hover { background: rgba(154,107,63,.07); }
+.band-pair .r-from { text-align: right; color: var(--ink-soft); }
+.band-pair .r-into { font-weight: 600; color: var(--ink); }
+.band-pair:hover .r-from, .band-pair:hover .r-into { color: var(--oxblood); }
+.band-score { color: var(--ink-soft); font-size: .76rem; }
+.band-go { font-size: .6rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ochre);
+  opacity: 0; transition: opacity .12s; white-space: nowrap; }
+.band-pair:hover .band-go { opacity: 1; }
+.band-foot { font-size: .82rem; line-height: 1.5; margin: 1.1rem 0 .3rem; max-width: 60ch; }
+
+/* compare — two entities as facing exhibits, the same term highlighted in each one's source passages */
+.compare-hero { margin: .5rem 0 1.9rem; }
+/* The question is the page's thesis — a serif italic lead-in bound tight to the names below it (one
+   title unit), kept in ink-soft so the ochre tilde stays the only accent. */
+.compare-ask { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 1.4rem;
+  line-height: 1.1; color: var(--ink-soft); margin: 0 0 .2rem; }
+.compare-q { font-family: var(--serif); font-weight: 600; font-size: 2.1rem; line-height: 1.12;
+  margin: 0 0 .6rem; color: var(--ink); display: flex; flex-wrap: wrap; align-items: baseline; gap: .65rem; }
+.compare-tilde { color: var(--ochre); font-size: 1.6rem; }
+.compare-verdict { display: flex; flex-wrap: wrap; align-items: baseline; gap: .7rem; margin-bottom: .7rem; }
+.verdict-band { font-family: var(--mono); font-size: .62rem; letter-spacing: .14em; text-transform: uppercase;
+  padding: .16rem .5rem; border: 1.5px solid currentColor; border-radius: 2px; }
+.verdict-band.fold { color: var(--good); }
+.verdict-band.judge { color: var(--ochre); }
+.verdict-band.aside { color: var(--ink-soft); }
+.verdict-meta { font-size: .72rem; color: var(--ink-soft); }
+.compare-lede { color: var(--ink-soft); font-size: 1rem; max-width: 58ch; margin: 0; }
+
+.compare-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;
+  align-items: start; }
+.exhibit { background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--rule-2);
+  border-radius: 3px; padding: 1.1rem 1.25rem; box-shadow: 4px 7px 0 rgba(33,29,23,.05); }
+.exhibit-head { border-bottom: 1px solid var(--rule-2); padding-bottom: .75rem; margin-bottom: .3rem; }
+.exhibit-name { font-family: var(--serif); font-size: 1.4rem; font-weight: 600; color: var(--ink);
+  text-decoration: none; line-height: 1.1; }
+.exhibit-name:hover { color: var(--oxblood); }
+.exhibit-meta { font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft);
+  margin-top: .3rem; }
+.exhibit-aka { font-size: .8rem; color: var(--ink-soft); margin-top: .35rem; font-style: italic; }
+.ev { padding: .8rem 0; border-top: 1px solid var(--rule-2); }
+.ev-text { margin: 0 0 .45rem; font-size: .9rem; line-height: 1.58; color: var(--ink-soft); }
+.ev-hl { background: var(--ochre-lt); color: var(--paper); padding: .02em .18em; border-radius: 1px;
+  font-weight: 600; }
+.ev-src { font-size: .68rem; color: var(--ochre); text-decoration: none; letter-spacing: .04em;
+  font-family: var(--mono); }
+.ev-src:hover { text-decoration: underline; }
+/* Shown when the entity isn't named in its own passages — names the alias forms the marks land on. */
+.ev-alias-note { margin: .2rem 0 0; padding: .5rem .7rem; font-size: .82rem; line-height: 1.5;
+  color: var(--ink-soft); background: rgba(154,107,63,.06); border-left: 2px solid var(--ochre-lt);
+  border-radius: 2px; }
+.ev-alias-note b { color: var(--ink); font-weight: 600; }
+/* When one entity is far thinner than the other, the gap IS the evidence — name it. */
+.ev-thin { margin: .9rem 0 0; padding: .7rem .85rem; font-size: .82rem; line-height: 1.5;
+  color: var(--ink-soft); background: rgba(154,107,63,.06); border-left: 2px solid var(--ochre-lt);
+  border-radius: 2px; }
+.ev-thin b { color: var(--ink); font-weight: 600; }
+
+/* Top bar: breadcrumb orients, the pill on the right is the way back — subtly raised out of the text.
+   The same pill closes the page at the bottom, so the affordance reads identically wherever you meet it. */
+.compare-topbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  flex-wrap: wrap; }
+.compare-foot { margin-top: 2.4rem; }
+.back-pill { display: inline-flex; align-items: center; gap: .4rem; flex-shrink: 0;
+  padding: .34rem .8rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ochre); text-decoration: none;
+  background: rgba(154,107,63,.07); border: 1px solid var(--ochre-lt); border-radius: 999px;
+  transition: background .12s, color .12s, border-color .12s; }
+.back-pill:hover { color: var(--paper); background: var(--ochre); border-color: var(--ochre); }
+.back-pill:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
+
+@media (max-width: 760px) { .compare-cols { grid-template-columns: 1fr; } }
+
 /* lighter sections — Lint / Audit: the finding + a plain-language diagnosis, no remedy yet */
 .lighter { margin: 0 0 1.8rem; }
 .lighter-sub { font-size: .64rem; letter-spacing: .14em; text-transform: uppercase;
@@ -658,10 +808,11 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 @media (max-width: 640px) {
   .act { grid-template-columns: 1fr; gap: .5rem; }
   .act-rail { flex-direction: row; align-items: baseline; gap: .6rem; }
-  .clash, .receipt-row, .split-row { grid-template-columns: 1fr; gap: .15rem; }
-  .r-from { text-align: left; }
+  .clash, .receipt-row, .split-row, .band-pair { grid-template-columns: 1fr; gap: .15rem; }
+  .r-from, .band-pair .r-from { text-align: left; }
   .contract-head { flex-direction: column; gap: .9rem; }
   .split-offer-head { flex-direction: column; align-items: flex-start; gap: .6rem; }
+  .band-ev { margin-left: 0; }
 }
 
 .admin-token { margin-top: 2rem; }
