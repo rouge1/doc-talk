@@ -23,6 +23,22 @@ _WS = re.compile(r"[\s_]+")  # underscores are separators: AFH_channel_map keys 
 
 _ACRONYM = re.compile(r"^(.+?)\s*\(([A-Za-z][A-Za-z0-9.\-]{1,15})\)\s*$")
 
+# Spec test-vector tables key each row with a transaction id ("T_ID 5 - RTT AA candidates" is row 5
+# of a transaction-ID table, not an entity named that). The row's real subject follows the label.
+# Strip the label so the surface collapses to that subject and resolves into the genuine entity
+# instead of fragmenting into a per-row twin. Deliberately narrow — the label must be the
+# transaction-ID keyword followed by a number, so real names that merely end in a digit ("AES 128",
+# "IEEE 802.11") are never touched.
+_ROW_LABEL = re.compile(r"^t[_\- ]?id\s*[#:]?\s*\d+\s*(?:[-–—:]\s*)?", re.IGNORECASE)
+
+
+def strip_row_label(surface: str) -> str:
+    """Drop a leading transaction-ID row label, keeping the cell's real subject:
+    ``"T_ID 5 - RTT AA candidates"`` → ``"RTT AA candidates"``. Returns ``""`` when the surface is
+    *only* a label (``"T_ID 5"``), which names a table row, not a subject — extraction drops it and
+    the gate fails it so ``wiki-prune`` can reap any that predate this rule."""
+    return _ROW_LABEL.sub("", surface.strip()).strip()
+
 
 def acronym_pair(surface: str) -> tuple[str, str] | None:
     """Detect a definitional ``Foo Bar (FB)`` surface and return ``(expansion_norm, acronym_norm)``

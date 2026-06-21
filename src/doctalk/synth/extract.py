@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from doctalk.models.chat import chat
 from doctalk.synth.gate import is_pageworthy
+from doctalk.synth.normalize import strip_row_label
 
 # Controlled vocabulary keeps pages groupable and the resolver's type-gating meaningful; an
 # unrecognized type falls back to the catch-all "concept" rather than spawning a junk type.
@@ -87,7 +88,9 @@ def _coerce(raw: object) -> list[ExtractedEntity]:
     for item in raw:
         if not isinstance(item, dict):
             continue
-        name = str(item.get("name", "")).strip()
+        # Strip a transaction-ID row label ("T_ID 5 - RTT AA candidates" -> "RTT AA candidates") so a
+        # test-vector table doesn't mint one per-row twin of a real subject; a bare label empties out.
+        name = strip_row_label(str(item.get("name", "")).strip())
         if not name:
             continue
         type_ = str(item.get("type", "concept")).strip().lower()

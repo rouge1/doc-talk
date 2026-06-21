@@ -12,7 +12,7 @@ from doctalk.db import repo
 from doctalk.db.models import Claim, Mention
 from doctalk.db.session import session_scope
 from doctalk.synth import resolve
-from doctalk.synth.normalize import acronym_pair
+from doctalk.synth.normalize import acronym_pair, strip_row_label
 
 
 # --- units -----------------------------------------------------------------
@@ -24,6 +24,17 @@ def test_acronym_pair_detects_definitional_form():
         "l2cap",
     )
     assert acronym_pair("just a name") is None
+
+
+def test_strip_row_label_salvages_the_subject():
+    # A transaction-ID row label is dropped, leaving the cell's real subject to resolve normally.
+    assert strip_row_label("T_ID 5 - RTT AA candidates") == "RTT AA candidates"
+    assert strip_row_label("T_ID 0 - non-mode0 channel") == "non-mode0 channel"
+    assert strip_row_label("T_ID 5") == ""                        # only a label, no subject
+    # Conservative: a real name is never touched, even when it ends in a number.
+    assert strip_row_label("RTT AA candidates") == "RTT AA candidates"
+    assert strip_row_label("AES 128") == "AES 128"
+    assert strip_row_label("IEEE 802.11") == "IEEE 802.11"
 
 
 def test_types_compatible_gate():

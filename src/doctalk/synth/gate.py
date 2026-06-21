@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from doctalk.synth.normalize import strip_row_label
+
 # All-caps alnum starting with a letter: "E0", "HCI", "L2CAP". Real spec entities, never dropped
 # for being short or hex-shaped.
 _ACRONYM_SHAPE = re.compile(r"^[A-Z][A-Z0-9]+$")
@@ -52,6 +54,8 @@ def is_pageworthy(name: str, type_: str = "concept") -> bool:
     if _PURE_NUMBER.match(s) or _HEX_LITERAL.match(s):
         return False
     if _MEASUREMENT.match(s) or _DOC_REF.match(s):
+        return False
+    if not strip_row_label(s):  # bare "T_ID 5" — a transaction-ID table key, no subject behind it
         return False
     if _ACRONYM_SHAPE.match(s) or _NAMED_FN_SHAPE.match(s):  # "E0", "AES" — or "h3", "f4"
         return True

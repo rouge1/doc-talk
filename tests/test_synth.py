@@ -57,6 +57,18 @@ def test_gate_keeps_real_entities():
         assert is_pageworthy(name) is True, name
 
 
+def test_gate_rejects_bare_row_labels_keeps_their_subject():
+    from doctalk.synth.gate import is_pageworthy
+
+    # A test-vector table keys each row "T_ID <n>". The bare key is a table coordinate, not a subject
+    # — rejected, so wiki-prune can reap any that predate the rule. But the row's real subject still
+    # rides along in "T_ID 5 - RTT AA candidates", so the whole string stays pageworthy (the label is
+    # stripped at extraction, never buried by prune).
+    assert is_pageworthy("T_ID 5") is False
+    assert is_pageworthy("T_ID 0") is False
+    assert is_pageworthy("T_ID 5 - RTT AA candidates") is True
+
+
 # --- extractor output parsing ----------------------------------------------
 
 
@@ -97,6 +109,15 @@ def test_parse_entities_gates_data_values():
            '{"name": "E0", "type": "protocol", "claims": ["E0 is a cipher."]}]}')
     ents = parse_entities(raw)
     assert [e.name for e in ents] == ["E0"]
+
+
+def test_parse_entities_strips_transaction_id_row_labels():
+    # Found live: a test-vector table minted a "T_ID 5 - RTT AA candidates" twin of the real "RTT AA
+    # candidates". Strip the row label so the subject survives; a bare label has nothing to keep.
+    raw = ('{"entities": [{"name": "T_ID 5 - RTT AA candidates", "type": "component", "claims": ["c"]},'
+           '{"name": "T_ID 5", "type": "component", "claims": ["c"]}]}')
+    ents = parse_entities(raw)
+    assert [e.name for e in ents] == ["RTT AA candidates"]
 
 
 def test_parse_entities_salvages_prose_wrapped_json():
