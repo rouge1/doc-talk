@@ -27,11 +27,16 @@ def db(tmp_path, monkeypatch):
 
     vstore.reset_db_cache()  # the lancedb connection is cached; without this, vectors stored by an
     # earlier test leak into this test's (re-used) entity ids and skew resolver scores
+    from doctalk.synth import dedupe
+
+    dedupe.invalidate_plan_cache()  # the duplicates plan is memoized by a (count, max-id) fingerprint;
+    # two tests' fresh DBs can collide on that, so clear it between tests
 
     Base.metadata.create_all(session_mod.get_engine())
     yield
     session_mod.reset_engine()
     vstore.reset_db_cache()
+    dedupe.invalidate_plan_cache()
     get_settings.cache_clear()
 
 

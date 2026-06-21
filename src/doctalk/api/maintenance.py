@@ -19,7 +19,7 @@ from doctalk.config import get_settings
 from doctalk.db import repo
 from doctalk.db.models import Entity
 from doctalk.db.session import session_scope
-from doctalk.synth import disambiguate, lint, merge, pages, wikirepo
+from doctalk.synth import dedupe, disambiguate, lint, merge, pages, wikirepo
 
 router = APIRouter(prefix="/api/maintenance")
 
@@ -96,6 +96,7 @@ def merge_collisions() -> dict:
             sha = wikirepo.head_sha()
             if sha:
                 repo.set_merge_committed_sha(s, [mid for _, _, mid in applied], sha)
+    dedupe.invalidate_plan_cache()  # entities moved — the next duplicates plan must recompute
     return {
         "applied": [{"src": sname, "dst": dname} for sname, dname, _ in applied],
         "skipped": [{"src": sname, "dst": dname, "reason": why} for sname, dname, why in skipped],
@@ -117,11 +118,33 @@ def undo_merge(body: UndoRequest) -> dict:
         new_sha = None
         if undone and wikirepo.commit(f"wiki-unmerge: reversed {len(undone)} merge(s)"):
             new_sha = wikirepo.head_sha()
+    dedupe.invalidate_plan_cache()  # entities resurrected — the next duplicates plan must recompute
     return {
         "undone": [{"src": src, "dst": dst} for src, dst in undone],
         "count": len(undone),
         "sha": new_sha,
     }
+
+
+@router.get("/duplicates")
+def duplicate_plan() -> dict:
+    """Read-only triage of the near-duplicate entities lint flags: each candidate pair scored with the
+    resolver's own signals and bucketed into fold / judge / aside, plus every score for the gauge.
+    No merges, no LLM — a plan to look at before any heal is wired up."""
+    with session_scope() as s:
+        return dedupe.plan_duplicates(s)
+
+
+@router.get("/compare")
+def compare_duplicate(a: int, b: int) -> dict:
+    """Side-by-side evidence for one candidate pair: the score + signals, plus each entity's source
+    passages (raw chunk text where it's mentioned) so a human can read both contexts and judge whether
+    they're the same entity. Read-only."""
+    with session_scope() as s:
+        out = dedupe.compare_pair(s, a, b)
+    if out is None:
+        raise HTTPException(status_code=404, detail="entity not found")
+    return out
 
 
 @router.post("/disambiguate", dependencies=[Depends(require_admin)])
@@ -134,6 +157,7 @@ def disambiguate_collisions() -> dict:
         sha = None
         if applied and wikirepo.commit(f"wiki-disambiguate: {len(applied)} slug collision(s)"):
             sha = wikirepo.head_sha()
+    dedupe.invalidate_plan_cache()  # slugs changed — drop the cached plan so sample stems stay fresh
     return {
         "applied": [{"name": name, "base": base, "slug": slug, "id": eid}
                     for name, base, slug, eid in applied],
@@ -155,6 +179,7 @@ def undo_disambiguate(body: DisambiguateUndoRequest) -> dict:
         new_sha = None
         if undone and wikirepo.commit(f"wiki-disambiguate: reversed {len(undone)} split(s)"):
             new_sha = wikirepo.head_sha()
+    dedupe.invalidate_plan_cache()  # slugs changed — drop the cached plan so sample stems stay fresh
     return {"undone": [{"name": n, "base": b} for n, b in undone], "count": len(undone), "sha": new_sha}
 
 
