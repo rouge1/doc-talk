@@ -64,7 +64,9 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
 - `pytest -q` — Phase 0 verification (DAG idempotency + crash/resume), runs on a temp SQLite db.
 
 **Wiki maintenance (Phase 4):** `doctalk wiki-lint [--fix]` · `wiki-audit` · `wiki-merge` ·
-`wiki-prune [--dry-run]` (drop noise entities that predate the extraction gate — reversible).
+`wiki-prune [--dry-run]` (drop noise entities that predate the extraction gate — reversible) ·
+`wiki-relabel [--dry-run]` (repair entities that swallowed a test-vector row label like
+`T_ID 5 - …`: fold into the clean twin / rename / prune — reversible).
 
 **Planned:** `doctalk wiki-bootstrap` (Phase 4, last-resort).
 
