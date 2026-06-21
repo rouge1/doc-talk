@@ -591,6 +591,16 @@ def prune_entity(session: Session, entity_id: int) -> None:
         entity.wiki_path = None
 
 
+def rename_entity(session: Session, entity_id: int, *, name: str, norm_key: str) -> None:
+    """Rewrite an entity's canonical name + blocking key in place (a salvage rename — e.g. stripping a
+    leaked test-vector row label off "T_ID 1 - mode0 channel"). Claims/mentions point by id, so
+    provenance is untouched; the caller moves the page to the new slug and re-embeds the name vector."""
+    entity = session.get(Entity, entity_id)
+    if entity is not None:
+        entity.name = name
+        entity.norm_key = norm_key
+
+
 # --- entity resolution (synth_resolve) -------------------------------------
 
 

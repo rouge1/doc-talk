@@ -405,6 +405,58 @@ def wiki_prune(
 
 
 @app.command()
+def wiki_relabel(
+    dry_run: bool = typer.Option(False, "--dry-run", help="show the disposition; change nothing"),
+) -> None:
+    """Repair entity names that swallowed a test-vector row label ("T_ID 5 - RTT AA candidates").
+    Each is folded into its clean twin, renamed in place when no twin exists, or pruned when the
+    label was the whole name. Reversible — folds undo by the wiki-commit sha, prunes by reactivation.
+    One git commit."""
+    from doctalk.config import get_settings
+    from doctalk.db.models import utcnow
+    from doctalk.synth import relabel, wikirepo
+
+    wiki_dir = get_settings().wiki_dir
+    if dry_run:
+        with session_scope() as session:
+            plan = relabel.plan_relabel(session)
+        if not plan:
+            typer.echo("wiki-relabel: nothing to repair ✓")
+            return
+        for r in plan:
+            if r.action == "fold":
+                typer.echo(f"  fold   {r.raw!r} -> {r.into_name!r}")
+            elif r.action == "rename":
+                typer.echo(f"  rename {r.raw!r} -> {r.clean!r}")
+            else:
+                typer.echo(f"  prune  {r.raw!r}  (bare label, no subject)")
+        folds = sum(r.action == "fold" for r in plan)
+        renames = sum(r.action == "rename" for r in plan)
+        prunes = sum(r.action == "prune" for r in plan)
+        typer.echo(f"\nwould repair {len(plan)} ({folds} fold, {renames} rename, {prunes} prune); "
+                   "run without --dry-run to apply")
+        return
+
+    with session_scope() as session:
+        out = relabel.apply_relabel(session, wiki_dir)
+        n = len(out["folds"]) + len(out["renames"]) + len(out["prunes"])
+        sha = None
+        if n:
+            wikirepo.append_log(f"## [{utcnow().date().isoformat()}] relabel | "
+                                f"repaired {n} row-label entit(ies)")
+            if wikirepo.commit(f"wiki-relabel: {len(out['folds'])} folded, "
+                               f"{len(out['renames'])} renamed, {len(out['prunes'])} pruned"):
+                sha = wikirepo.head_sha()
+                if sha and out["merge_ids"]:  # stamp the folds so the batch undoes by this handle
+                    repo.set_merge_committed_sha(session, out["merge_ids"], sha)
+    if not n:
+        typer.echo("wiki-relabel: nothing to repair ✓")
+        return
+    typer.echo(f"repaired {n}: {len(out['folds'])} folded, {len(out['renames'])} renamed, "
+               f"{len(out['prunes'])} pruned" + (f"  ({sha[:8]})" if sha else ""))
+
+
+@app.command()
 def wiki_init() -> None:
     """Create the wiki/ git repo scaffold (dirs + index.md/log.md/overview.md). Idempotent."""
     from doctalk.synth import wikirepo
