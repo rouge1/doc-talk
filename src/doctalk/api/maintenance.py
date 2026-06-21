@@ -147,6 +147,30 @@ def compare_duplicate(a: int, b: int) -> dict:
     return out
 
 
+class FoldRequest(BaseModel):
+    a: int  # the two entities a human read in Compare and judged to be the same
+    b: int
+
+
+@router.post("/duplicates/fold", dependencies=[Depends(require_admin)])
+def fold_duplicate(body: FoldRequest) -> dict:
+    """Confirm a duplicate pair as the same entity: fold the thinner into the richer (claims/mentions
+    repointed, a redirect stub left behind), commit the wiki, and stamp the merge so it undoes by the
+    same ``/undo-merge`` path. Mutating — gated. 409 if the pair is no longer foldable."""
+    with session_scope() as s:
+        out = merge.fold_pair(s, body.a, body.b)
+        if out is None:
+            raise HTTPException(status_code=409, detail="pair is no longer foldable")
+        merge_id, folded, survivor = out
+        sha = None
+        if wikirepo.commit(f"wiki-merge: folded duplicate {folded} → {survivor}"):
+            sha = wikirepo.head_sha()
+            if sha:
+                repo.set_merge_committed_sha(s, [merge_id], sha)
+    dedupe.invalidate_plan_cache()  # one fewer active entity — the next plan must recompute
+    return {"folded": folded, "into": survivor, "sha": sha}
+
+
 @router.post("/disambiguate", dependencies=[Depends(require_admin)])
 def disambiguate_collisions() -> dict:
     """Give each genuinely-distinct slug collision its own page (a stable ``<base>-<disc>`` slug for the

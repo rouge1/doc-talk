@@ -150,6 +150,24 @@ def merge_slug_collisions(session) -> tuple[list[tuple[str, str, int]], list[tup
     return applied, [(s.name, d.name, why) for s, d, why in skipped]
 
 
+def fold_pair(session, a_id: int, b_id: int) -> tuple[int, str, str] | None:
+    """Fold one deliberately-confirmed duplicate pair (the Compare page's "Same → fold together"). The
+    richer entity survives — most claims, tie -> source_count, tie -> lower id — and the other is merged
+    into it with its name respected as-is (no canonical rename; these are distinct spellings a human just
+    judged to be the same thing). Returns ``(merge_id, folded_name, survivor_name)``, or ``None`` if
+    either side is gone or no longer active (already merged by someone else). The caller commits the wiki
+    and stamps the sha, so this undoes by the exact same path as a slug-collision merge."""
+    a, b = session.get(Entity, a_id), session.get(Entity, b_id)
+    if a is None or b is None or a.id == b.id or a.status != "active" or b.status != "active":
+        return None
+    rank = lambda e: (_claim_count(session, e.id), e.source_count, -e.id)  # noqa: E731
+    keep, drop = (a, b) if rank(a) >= rank(b) else (b, a)
+    folded_name = drop.name
+    merge_id = apply_merge(session, drop, keep, reason="duplicates: confirmed same")
+    wikirepo.write_page("index.md", pages.render_index(session))
+    return merge_id, folded_name, keep.name
+
+
 def undo_merge(session, merge) -> tuple[str, str]:
     """Reverse one merge: repoint its claims/mentions back (``repo.unmerge_entities``), restore the
     resurrected entity's name vector + real page, and rewrite the survivor's now-thinner page. Returns

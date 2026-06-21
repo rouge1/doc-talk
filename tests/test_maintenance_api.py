@@ -91,6 +91,57 @@ def test_apply_then_undo_round_trips(client, stub_resolve):
     assert client.get("/api/maintenance/recent-merges").json()["sha"] is None
 
 
+def _distinct_pair(s):
+    """Two genuinely distinct-named near-dups (different norm_keys), richer one first — the kind a human
+    reads in Compare, judges 'same', and folds."""
+    repo.upsert_file(s, content_hash="b" * 64, path="/b", filename="b.pdf",
+                     format="pdf", mime="x", byte_size=1)
+    s.flush()
+    fid = repo.get_file_id(s, "b" * 64)
+    rich = repo.create_entity(s, name="Out of Band pairing", type_="concept", norm_key="out of band pairing")
+    thin = repo.create_entity(s, name="Out Of Band", type_="concept", norm_key="out of band")
+    for e, n in ((rich, 3), (thin, 1)):
+        for i in range(n):
+            c = repo.insert_claim(s, entity_id=e.id, file_id=fid, text=f"{e.name} {i}.")
+            repo.insert_claim_sources(s, c.id, [{"file_id": fid, "chunk_id": None}])
+    for e in (rich, thin):
+        path = f"entities/{pages.slug_for(e)}.md"
+        wikirepo.write_page(path, pages.render_entity_page(s, e))
+        repo.upsert_wiki_page(s, path=path, title=e.name, kind="entity", entity_id=e.id)
+        e.wiki_path = path
+    return rich.id, thin.id
+
+
+def test_fold_duplicate_then_undo_round_trips(client, stub_resolve):
+    """Compare's 'Same → fold together': the richer entity survives whichever order the pair is sent,
+    the thinner is merged into it, and /undo-merge by the returned sha resurrects it."""
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        rich, thin = _distinct_pair(s)
+    from doctalk.db.models import Entity
+
+    res = client.post("/api/maintenance/duplicates/fold", json={"a": thin, "b": rich}).json()
+    assert res["into"] == "Out of Band pairing" and res["folded"] == "Out Of Band" and res["sha"]
+    with session_scope() as s:
+        assert s.get(Entity, thin).status == "merged_into"
+        assert s.get(Entity, rich).status == "active"
+    # the pair can't be folded twice — the thinner is already gone
+    assert client.post("/api/maintenance/duplicates/fold", json={"a": thin, "b": rich}).status_code == 409
+
+    undo = client.post("/api/maintenance/undo-merge", json={"sha": res["sha"]}).json()
+    assert undo["count"] == 1
+    with session_scope() as s:
+        assert s.get(Entity, thin).status == "active"  # folded entity is back
+
+
+def test_fold_is_admin_gated(client, monkeypatch):
+    monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
+    get_settings.cache_clear()
+    blocked = client.post("/api/maintenance/duplicates/fold", json={"a": 1, "b": 2})
+    assert blocked.status_code == 401
+    get_settings.cache_clear()
+
+
 def test_undo_is_admin_gated(client, monkeypatch):
     monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
     get_settings.cache_clear()

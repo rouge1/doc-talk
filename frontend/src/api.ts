@@ -347,6 +347,13 @@ export interface DupBand {
   sample: DupPair[];
 }
 
+// The result of folding a confirmed-duplicate pair: which name was folded into which survivor, and the
+// wiki-commit handle to undo it by (reuses undoMerge).
+export interface FoldResult {
+  folded: string;
+  into: string;
+  sha: string | null;
+}
 export interface DuplicatePlan {
   total: number;
   cuts: { judge: number; fold: number }; // the two score thresholds that divide the bands
@@ -393,6 +400,8 @@ export const api = {
   duplicates: () => get<DuplicatePlan>("/api/maintenance/duplicates"),
   comparePair: (a: number, b: number) =>
     get<ComparePair>(`/api/maintenance/compare?a=${a}&b=${b}`),
+  foldDuplicate: (a: number, b: number) =>
+    post<FoldResult>("/api/maintenance/duplicates/fold", { a, b }),
   applyCollisions: () => post<MergeResult>("/api/maintenance/merge-collisions"),
   recentMerges: () => get<RecentBatch>("/api/maintenance/recent-merges"),
   undoMerge: (sha: string) => post<UndoResult>("/api/maintenance/undo-merge", { sha }),

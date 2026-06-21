@@ -770,6 +770,26 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .back-pill:hover { color: var(--paper); background: var(--ochre); border-color: var(--ochre); }
 .back-pill:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
 
+/* The decision bar: the one affirmative action a human takes after reading both columns. */
+.verdict-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 2.2rem; }
+.fold-btn { font-family: var(--mono); font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--paper); background: var(--ink); border: 0; border-radius: 3px; padding: .6rem 1.15rem;
+  cursor: pointer; transition: background .12s; }
+.fold-btn:hover:not(:disabled) { background: var(--oxblood); }
+.fold-btn:disabled { opacity: .5; cursor: default; }
+.fold-btn:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
+.verdict-hint { font-size: .85rem; }
+.compare-note { display: flex; align-items: baseline; gap: .55rem; margin-top: 1rem; padding: .6rem .9rem;
+  border: 1px solid var(--rule); border-left: 3px solid var(--ink-soft); border-radius: 3px; font-size: .9rem;
+  color: var(--ink); }
+.compare-note.done { border-left-color: var(--good); }
+.compare-note.undone { border-left-color: var(--ochre); }
+.compare-note.error { border-left-color: var(--oxblood); }
+.compare-note .mk { font-weight: 700; font-size: .8rem; }
+.compare-note.done .mk { color: var(--good); }
+.compare-note.undone .mk { color: var(--ochre); }
+.compare-note.error .mk { color: var(--oxblood); }
+
 @media (max-width: 760px) { .compare-cols { grid-template-columns: 1fr; } }
 
 /* lighter sections — Lint / Audit: the finding + a plain-language diagnosis, no remedy yet */

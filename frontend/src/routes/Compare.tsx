@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, sourcePath, type EvidenceSide } from "../api";
 import { useFetch } from "../useFetch";
+
+type Note = { text: string; tone: "done" | "undone" | "error" } | null;
 
 // Two entities the resolver flagged as possible duplicates, set side by side as exhibits: the same
 // surface term highlighted in each one's real source passages, so a human can read both contexts and
@@ -119,6 +122,46 @@ export default function Compare() {
     () => api.comparePair(Number(a), Number(b)),
     `compare:${a}:${b}`,
   );
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>(null);
+  const [folded, setFolded] = useState<{ sha: string | null } | null>(null);
+
+  const fold = async () => {
+    if (!data) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await api.foldDuplicate(data.a.id, data.b.id);
+      setFolded({ sha: r.sha });
+      setNote({ text: `Folded ${r.folded} into ${r.into}.`, tone: "done" });
+    } catch (e) {
+      const m = String(e);
+      setNote({
+        text: m.includes("401")
+          ? "This needs the admin token — set it on the Maintain page, then come back."
+          : m.includes("409")
+            ? "This pair changed since you opened it — head back to the list."
+            : `Couldn't fold: ${e}`,
+        tone: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const undo = async () => {
+    if (!folded?.sha) return;
+    setBusy(true);
+    try {
+      await api.undoMerge(folded.sha);
+      setFolded(null);
+      setNote({ text: "Unfolded — both entities are back.", tone: "undone" });
+    } catch (e) {
+      setNote({ text: `Couldn't undo: ${e}`, tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (loading) return <div className="loading">Pulling the passages…</div>;
   if (error || !data) return <div className="empty">Couldn't load this comparison.</div>;
@@ -161,6 +204,35 @@ export default function Compare() {
         <Exhibit side={data.a} note={fragmentNote(data.a, data.b)} />
         <Exhibit side={data.b} note={fragmentNote(data.b, data.a)} />
       </div>
+
+      <div className="verdict-actions">
+        {folded ? (
+          <span className="verdict-hint muted">Folded. Undo if that wasn't right.</span>
+        ) : (
+          <>
+            <button type="button" className="fold-btn" onClick={fold} disabled={busy}>
+              {busy ? "Folding…" : "Same — fold together"}
+            </button>
+            <span className="verdict-hint muted">
+              Folds the thinner page into the richer one, keeping every claim. Reversible.
+            </span>
+          </>
+        )}
+      </div>
+
+      {note && (
+        <div className={`compare-note ${note.tone}`} role="status">
+          <span className="mk mono" aria-hidden="true">
+            {note.tone === "error" ? "!" : note.tone === "undone" ? "↺" : "✓"}
+          </span>
+          <span>{note.text}</span>
+          {folded && note.tone === "done" && (
+            <button type="button" className="linklike" onClick={undo} disabled={busy}>
+              Undo
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="compare-foot">
         <Link className="back-pill" to="/maintenance#duplicates">
