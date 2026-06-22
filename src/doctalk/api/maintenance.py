@@ -19,7 +19,7 @@ from doctalk.config import get_settings
 from doctalk.db import repo
 from doctalk.db.models import Entity
 from doctalk.db.session import session_scope
-from doctalk.synth import dedupe, disambiguate, lint, merge, pages, wikirepo
+from doctalk.synth import dedupe, disambiguate, lint, merge, pages, review, wikirepo
 
 router = APIRouter(prefix="/api/maintenance")
 
@@ -39,7 +39,9 @@ def _group(findings: list[lint.Finding]) -> list[dict[str, Any]]:
         by_kind[f.kind].append(f)
     return [
         {"kind": kind, "count": len(items),
-         "items": [{"detail": f.detail, "ref": f.ref, "link": f.link} for f in items]}
+         "items": [{"detail": f.detail, "ref": f.ref, "link": f.link, "entity_id": f.entity_id,
+                    "candidate": f.candidate}
+                   for f in items]}
         for kind, items in sorted(by_kind.items())
     ]
 
@@ -168,6 +170,60 @@ def fold_duplicate(body: FoldRequest) -> dict:
             if sha:
                 repo.set_merge_committed_sha(s, [merge_id], sha)
     dedupe.invalidate_plan_cache()  # one fewer active entity — the next plan must recompute
+    return {"folded": folded, "into": survivor, "sha": sha}
+
+
+class UnresolvedRequest(BaseModel):
+    entity_id: int  # the provisional #unresolved entity a human just judged
+
+
+@router.post("/unresolved/keep", dependencies=[Depends(require_admin)])
+def keep_unresolved(body: UnresolvedRequest) -> dict:
+    """Accept an unresolved entity as genuinely distinct — promote it to ``active`` so it leaves the
+    review queue. A pure truth-store status flip (nothing in the wiki changes), reversible via
+    ``/unresolved/reopen``. Mutating — gated. 409 if it isn't an unresolved entity."""
+    with session_scope() as s:
+        name = review.keep(s, body.entity_id)
+        if name is None:
+            raise HTTPException(status_code=409, detail="not an unresolved entity")
+    dedupe.invalidate_plan_cache()  # one more active entity — the next duplicates plan must recompute
+    return {"name": name}
+
+
+@router.post("/unresolved/reopen", dependencies=[Depends(require_admin)])
+def reopen_unresolved(body: UnresolvedRequest) -> dict:
+    """Undo a Keep — send the entity back to the unresolved queue. Mutating — gated. 409 if it isn't
+    currently active (so a normal entity is never quietly demoted)."""
+    with session_scope() as s:
+        name = review.reopen(s, body.entity_id)
+        if name is None:
+            raise HTTPException(status_code=409, detail="not a resolvable entity")
+    dedupe.invalidate_plan_cache()
+    return {"name": name}
+
+
+class UnresolvedMergeRequest(BaseModel):
+    entity_id: int  # the unresolved entity a human judged to be a duplicate
+    into_id: int    # the active entity it duplicates (its top candidate)
+
+
+@router.post("/unresolved/merge", dependencies=[Depends(require_admin)])
+def merge_unresolved(body: UnresolvedMergeRequest) -> dict:
+    """Confirm an unresolved entity as a duplicate of its candidate: fold it into that active entity
+    (the same fold the Duplicates triage runs, only directional — the provisional one always loses),
+    commit the wiki, and stamp the merge so it undoes by the same ``/undo-merge`` path. Mutating —
+    gated. 409 if it's no longer foldable (already resolved/merged)."""
+    with session_scope() as s:
+        out = merge.fold_into(s, body.entity_id, body.into_id, reason="unresolved: confirmed duplicate")
+        if out is None:
+            raise HTTPException(status_code=409, detail="not foldable")
+        merge_id, folded, survivor = out
+        sha = None
+        if wikirepo.commit(f"wiki-merge: folded unresolved {folded} → {survivor}"):
+            sha = wikirepo.head_sha()
+            if sha:
+                repo.set_merge_committed_sha(s, [merge_id], sha)
+    dedupe.invalidate_plan_cache()  # one fewer unresolved entity — the next plan must recompute
     return {"folded": folded, "into": survivor, "sha": sha}
 
 

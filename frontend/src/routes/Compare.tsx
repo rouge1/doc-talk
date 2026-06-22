@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, sourcePath, type EvidenceSide } from "../api";
 import { useFetch } from "../useFetch";
 
@@ -118,6 +118,13 @@ function Exhibit({ side, note }: { side: EvidenceSide; note: string | null }) {
 
 export default function Compare() {
   const { a = "", b = "" } = useParams();
+  // Which list sent us here, so "Back to the list" returns to the right section (and the right verb is
+  // used to fold). An unresolved pair came from /maintenance#unresolved with the unresolved entity as
+  // `a`; everything else is a Duplicates pair.
+  const [params] = useSearchParams();
+  const from = params.get("from") === "unresolved" ? "unresolved" : "duplicates";
+  const backTo = `/maintenance#${from}`;
+  const backLabel = from === "unresolved" ? "Unresolved entities" : "Duplicates";
   const { data, error, loading } = useFetch(
     () => api.comparePair(Number(a), Number(b)),
     `compare:${a}:${b}`,
@@ -131,7 +138,12 @@ export default function Compare() {
     setBusy(true);
     setNote(null);
     try {
-      const r = await api.foldDuplicate(data.a.id, data.b.id);
+      // From the unresolved list the fold is directional (the provisional `a` always folds into its
+      // candidate `b`); a Duplicates pair lets the richer side win regardless of order.
+      const r =
+        from === "unresolved"
+          ? await api.mergeUnresolved(data.a.id, data.b.id)
+          : await api.foldDuplicate(data.a.id, data.b.id);
       setFolded({ sha: r.sha });
       setNote({ text: `Folded ${r.folded} into ${r.into}.`, tone: "done" });
     } catch (e) {
@@ -171,9 +183,9 @@ export default function Compare() {
       <div className="compare-topbar">
         <div className="crumbs">
           <Link to="/maintenance">Maintain</Link> &nbsp;/&nbsp;{" "}
-          <Link to="/maintenance#duplicates">Duplicates</Link> &nbsp;/&nbsp; compare
+          <Link to={backTo}>{backLabel}</Link> &nbsp;/&nbsp; compare
         </div>
-        <Link className="back-pill" to="/maintenance#duplicates">
+        <Link className="back-pill" to={backTo}>
           ← Back to the list
         </Link>
       </div>
@@ -214,7 +226,9 @@ export default function Compare() {
               {busy ? "Folding…" : "Same — fold together"}
             </button>
             <span className="verdict-hint muted">
-              Folds the thinner page into the richer one, keeping every claim. Reversible.
+              {from === "unresolved"
+                ? "Folds this unresolved entity into its match, keeping every claim. Reversible."
+                : "Folds the thinner page into the richer one, keeping every claim. Reversible."}
             </span>
           </>
         )}
@@ -235,7 +249,7 @@ export default function Compare() {
       )}
 
       <div className="compare-foot">
-        <Link className="back-pill" to="/maintenance#duplicates">
+        <Link className="back-pill" to={backTo}>
           ← Back to the list
         </Link>
       </div>

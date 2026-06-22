@@ -221,10 +221,22 @@ export interface PageInfo {
 
 // --- Maintenance (the operator loop: lint -> heal -> merge -> prune) -----------------------------
 
+// For an unresolved entity: the active entity it most likely duplicates — the candidate side of its
+// resolve decision, so it can be shown as the same entity~candidate pair the Duplicates bands use.
+export interface Candidate {
+  id: number;
+  name: string;
+  stem: string | null;
+  score: number;
+  signals: { lexical: number; embed: number; comention: number; alias: number };
+}
+
 export interface Finding {
   detail: string;
   ref: string | null;
   link?: string | null; // a wiki stem this finding points at — the dashboard links the ref to its page
+  entity_id?: number | null; // the entity this finding is about — enables an in-place action (Keep)
+  candidate?: Candidate | null; // unresolved only: its top duplicate candidate (null = genuinely new)
 }
 
 export interface FindingGroup {
@@ -403,6 +415,12 @@ export const api = {
     get<ComparePair>(`/api/maintenance/compare?a=${a}&b=${b}`),
   foldDuplicate: (a: number, b: number) =>
     post<FoldResult>("/api/maintenance/duplicates/fold", { a, b }),
+  keepUnresolved: (entity_id: number) =>
+    post<{ name: string }>("/api/maintenance/unresolved/keep", { entity_id }),
+  reopenUnresolved: (entity_id: number) =>
+    post<{ name: string }>("/api/maintenance/unresolved/reopen", { entity_id }),
+  mergeUnresolved: (entity_id: number, into_id: number) =>
+    post<FoldResult>("/api/maintenance/unresolved/merge", { entity_id, into_id }),
   applyCollisions: () => post<MergeResult>("/api/maintenance/merge-collisions"),
   recentMerges: () => get<RecentBatch>("/api/maintenance/recent-merges"),
   undoMerge: (sha: string) => post<UndoResult>("/api/maintenance/undo-merge", { sha }),

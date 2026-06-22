@@ -6,8 +6,8 @@ import {
   setAdminToken,
   type CollisionPlan,
   type DupBand,
-  type DupPair,
   type DuplicatePlan,
+  type Finding,
   type FindingGroup,
   type Findings,
   type RecentBatch,
@@ -71,11 +71,13 @@ const ALL_CHECKS = Object.keys(KIND_NAME);
 // how to undo. `need` drives the ledger (anything but "fix" wants a human) and the eyebrow.
 type Need = "decision" | "review" | "fix";
 const CHECK: Record<string, { title: string; eyebrow: string; need: Need; why: string; fix: string; undo: string }> = {
+  // Rendered as its own UnresolvedCase (candidate-pair rows), not the uniform anatomy — this entry
+  // only feeds `need` (→ classOf) and the "all clear" name. Kept accurate in case it's ever shown.
   unresolved: {
-    title: "Unresolved entities", eyebrow: "needs a human call", need: "decision",
+    title: "Unresolved entities", eyebrow: "needs a decision", need: "decision",
     why: "The resolver couldn't tell if each is a new entity or another spelling of one it already has.",
-    fix: "Open each and make the same-or-different call.",
-    undo: "Nothing's changed yet — this is a read-only queue.",
+    fix: "Merge it into the candidate if it's the same, or keep it apart if it's genuinely new.",
+    undo: "Both are reversible — from Recent activity (merge) or the button itself (keep apart).",
   },
   contradiction: {
     title: "Contradictions", eyebrow: "needs a call", need: "decision",
@@ -142,7 +144,6 @@ export default function Maintenance() {
   const [tick, setTick] = useState(0);
   const refresh = () => setTick((t) => t + 1);
   const location = useLocation();
-  const dupRef = useRef<HTMLDivElement>(null);
   const scrolledHash = useRef<string | null>(null);
   const plan = useFetch<CollisionPlan>(() => api.slugCollisions(), `plan-${tick}`);
   const recent = useFetch<RecentBatch>(() => api.recentMerges(), `recent-${tick}`);
@@ -156,23 +157,27 @@ export default function Maintenance() {
   const [note, setNote] = useState<Note>(null);
   const [needsToken, setNeedsToken] = useState(false); // an action 401'd — surface the token field inline
 
-  // Arriving from a compare via #duplicates: drop straight onto the band list, not the page top. The
-  // duplicates plan is cached now, so it resolves *first* — if we scrolled then, the collision case
-  // above would finish loading a beat later, grow, and shove the band list back off-screen (reads as a
-  // jump to the top). So wait until everything above the band list has settled, then scroll once.
+  // Arriving from a compare via a section hash (#duplicates / #unresolved): drop straight onto that
+  // section, not the page top. Each section's height depends on data that resolves at different times,
+  // so wait until everything ABOVE the target has settled before scrolling — otherwise a late card
+  // grows and shoves the target back off-screen (reads as a jump). Unresolved sits below Duplicates,
+  // so it also waits on the findings the two of them are drawn from.
   useEffect(() => {
-    const aboveSettled = !plan.loading && !recent.loading && !splits.loading && !dups.loading;
-    if (
-      location.hash === "#duplicates" &&
-      aboveSettled &&
-      dupRef.current &&
-      scrolledHash.current !== location.key
-    ) {
-      scrolledHash.current = location.key; // once per arrival, even if later fetches re-render
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      dupRef.current.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-    }
-  }, [location.hash, location.key, plan.loading, recent.loading, splits.loading, dups.loading]);
+    const hash = location.hash;
+    if ((hash !== "#duplicates" && hash !== "#unresolved") || scrolledHash.current === location.key)
+      return;
+    const aboveSettled =
+      !plan.loading && !recent.loading && !splits.loading && !dups.loading &&
+      (hash === "#duplicates" || (!lint.loading && !audit.loading));
+    const el = aboveSettled ? document.getElementById(hash.slice(1)) : null;
+    if (!el) return;
+    scrolledHash.current = location.key; // once per arrival, even if later fetches re-render
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }, [
+    location.hash, location.key, plan.loading, recent.loading, splits.loading, dups.loading,
+    lint.loading, audit.loading,
+  ]);
 
   const fail = (e: unknown) => {
     const is401 = String(e).includes("401");
@@ -276,6 +281,10 @@ export default function Maintenance() {
   const flagged = new Set(groups.map((g) => g.kind));
   const issueGroups = groups.filter((g) => CHECK[g.kind] && g.count > 0);
   const decideIssues = issueGroups.filter((g) => classOf(g.kind) === "decide");
+  // Unresolved entities are the same same-or-different call as Duplicates, so they get the matching
+  // candidate-pair case (rendered next to it) rather than the uniform anatomy the other decide kinds use.
+  const unresolvedGroup = decideIssues.find((g) => g.kind === "unresolved");
+  const otherDecide = decideIssues.filter((g) => g.kind !== "unresolved");
   const applyIssues = issueGroups.filter((g) => classOf(g.kind) === "apply");
   const clearKinds = ALL_CHECKS.filter((k) => !flagged.has(k));
 
@@ -333,11 +342,16 @@ export default function Maintenance() {
         empty={needYou === 0 ? "Nothing waiting on a decision." : null}
       >
         {(!dups.data || dupPairs > 0) && (
-          <div id="duplicates" ref={dupRef} style={{ scrollMarginTop: "5rem" }}>
+          <div id="duplicates" style={{ scrollMarginTop: "5rem" }}>
             <DuplicatesCase state={dups} />
           </div>
         )}
-        {decideIssues.map((g) => (
+        {unresolvedGroup && (
+          <div id="unresolved" style={{ scrollMarginTop: "5rem" }}>
+            <UnresolvedCase group={unresolvedGroup} />
+          </div>
+        )}
+        {otherDecide.map((g) => (
           <IssueCase key={g.kind} group={g} />
         ))}
       </ClassSection>
@@ -927,19 +941,29 @@ function usePersistentOpen(key: string): [boolean, (v: boolean) => void] {
   return [open, set];
 }
 
-// Inline merge for an obvious duplicate — no trip to Compare needed. On success the button flips to
-// Undo (reversing that exact fold by its wiki-commit sha), so a wrong click is one click back. Self-
-// contained: it shows its own failure inline (e.g. a 401 when the admin token's required).
-function MergeButton({ a, b }: { a: DupPair["a"]; b: DupPair["b"] }) {
+// The one inline action button behind every per-row decision: fold a duplicate, fold an unresolved
+// entity into its match, keep it apart. `act` performs the change and returns the thunk that reverses
+// it; on success the button flips to Undo (one click back), so a wrong call is cheap. Self-contained —
+// it owns the idle→busy→done→undo lifecycle and surfaces its own failure inline (401 needs-token,
+// 409 the row's already gone). `wide` lets a two-word label (“keep apart”) size to its text.
+function FlipButton({
+  label,
+  act,
+  wide = false,
+}: {
+  label: string;
+  act: () => Promise<() => Promise<void>>;
+  wide?: boolean;
+}) {
   const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
-  const [sha, setSha] = useState<string | null>(null);
+  const undoRef = useRef<(() => Promise<void>) | null>(null);
   const [why, setWhy] = useState("");
+  const cls = `band-merge${wide ? " wide" : ""}`;
 
-  const merge = async () => {
+  const run = async () => {
     setState("busy");
     try {
-      const r = await api.foldDuplicate(a.id, b.id);
-      setSha(r.sha);
+      undoRef.current = await act();
       setState("done");
     } catch (e) {
       const m = String(e);
@@ -948,11 +972,11 @@ function MergeButton({ a, b }: { a: DupPair["a"]; b: DupPair["b"] }) {
     }
   };
   const undo = async () => {
-    if (!sha) return;
+    if (!undoRef.current) return;
     setState("busy");
     try {
-      await api.undoMerge(sha);
-      setSha(null);
+      await undoRef.current();
+      undoRef.current = null;
       setState("idle");
     } catch {
       setWhy("undo failed");
@@ -962,22 +986,43 @@ function MergeButton({ a, b }: { a: DupPair["a"]; b: DupPair["b"] }) {
 
   if (state === "done")
     return (
-      <button type="button" className="band-merge done" onClick={undo}>
+      <button type="button" className={`${cls} done`} onClick={undo}>
         ↺ undo
       </button>
     );
   if (state === "error")
     return (
-      <button type="button" className="band-merge error" onClick={merge} title={why}>
+      <button type="button" className={`${cls} error`} onClick={run} title={why}>
         {why}
       </button>
     );
   return (
-    <button type="button" className="band-merge" onClick={merge} disabled={state === "busy"}>
-      {state === "busy" ? "…" : "merge"}
+    <button type="button" className={cls} onClick={run} disabled={state === "busy"}>
+      {state === "busy" ? "…" : label}
     </button>
   );
 }
+
+// The reversible thunks each per-row action hands FlipButton — defined once so Duplicates and
+// Unresolved fold through the exact same path (and undo by the exact same sha).
+const foldAct = (a: number, b: number) => async () => {
+  const r = await api.foldDuplicate(a, b);
+  return async () => {
+    if (r.sha) await api.undoMerge(r.sha);
+  };
+};
+const mergeUnresolvedAct = (entityId: number, intoId: number) => async () => {
+  const r = await api.mergeUnresolved(entityId, intoId);
+  return async () => {
+    if (r.sha) await api.undoMerge(r.sha);
+  };
+};
+const keepApartAct = (entityId: number) => async () => {
+  await api.keepUnresolved(entityId);
+  return async () => {
+    await api.reopenUnresolved(entityId);
+  };
+};
 
 function BandRow({
   bandKey,
@@ -1009,7 +1054,7 @@ function BandRow({
               // keyed by the pair, not the index, so a merged button stays bound to its pair when the
               // gauge re-buckets the sample.
               <li className="band-row" key={`${p.a.id}-${p.b.id}`}>
-                <MergeButton a={p.a} b={p.b} />
+                <FlipButton label="merge" act={foldAct(p.a.id, p.b.id)} />
                 <Link className="band-pair" to={`/maintenance/compare/${p.a.id}/${p.b.id}`}>
                   <span className="r-from">{p.a.name}</span>
                   <span className="r-arrow mono">~</span>
@@ -1025,6 +1070,100 @@ function BandRow({
         </details>
       )}
     </div>
+  );
+}
+
+// --- unresolved entities: the resolver's own deferred-duplicate queue -----------------------------
+
+// The same same-or-different call as Duplicates, so it wears the same clothes. Each unresolved entity
+// the resolver parked is paired against its top active candidate, in the Duplicates band-row treatment:
+// the same inline merge (fold it in), the same compare link, plus "keep apart" — the verdict Duplicates
+// never needs, because a duplicate pair is already two live pages. An entity with no near-match is
+// genuinely new: it gets a plain Keep and no pair.
+function UnresolvedCase({ group }: { group: FindingGroup }) {
+  const items = group.items.filter((it) => it.entity_id != null);
+  const queue = group.items.find((it) => it.entity_id == null); // open review-queue summary, if any
+  if (items.length === 0 && !queue) return null;
+  const withCand = items.filter((it) => it.candidate);
+  const newish = items.filter((it) => !it.candidate);
+  return (
+    <Case
+      state="open"
+      eyebrow="needs a decision"
+      stamp="Triage"
+      title="Unresolved entities"
+      dek={`${items.length} ${items.length === 1 ? "entity the resolver" : "entities the resolver"} parked — each is either another spelling of one already here, or genuinely new.`}
+    >
+      {withCand.length > 0 && (
+        <div className="unres">
+          <p className="unres-head muted">
+            Likely a duplicate of an entity already here — <strong>merge</strong> to fold it in, or{" "}
+            <strong>keep apart</strong> if it's genuinely its own. Open <em>compare</em> to read both first.
+          </p>
+          <ul className="band-rows">
+            {withCand.map((it) => (
+              <UnresolvedRow key={it.entity_id} it={it} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {newish.length > 0 && (
+        <div className="unres">
+          <p className="unres-head muted">
+            No near-match in the wiki — likely genuinely new. <strong>Keep</strong>{" "}
+            {newish.length === 1 ? "it" : "them"} to confirm.
+          </p>
+          <ul className="band-rows">
+            {newish.map((it) => (
+              <NewEntityRow key={it.entity_id} it={it} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {queue && <p className="band-foot muted">Plus {queue.detail}.</p>}
+    </Case>
+  );
+}
+
+// One unresolved entity beside the candidate it most likely duplicates — the Duplicates pair row, with
+// a second verb ("keep apart") for the new-entity verdict.
+function UnresolvedRow({ it }: { it: Finding }) {
+  const cand = it.candidate!;
+  const eid = it.entity_id!;
+  return (
+    <li className="band-row">
+      <FlipButton label="merge" act={mergeUnresolvedAct(eid, cand.id)} />
+      <FlipButton label="keep apart" wide act={keepApartAct(eid)} />
+      <Link className="band-pair" to={`/maintenance/compare/${eid}/${cand.id}?from=unresolved`}>
+        <span className="r-from">{it.ref}</span>
+        <span className="r-arrow mono">~</span>
+        <span className="r-into">{cand.name}</span>
+        <span className="band-score mono">{cand.score.toFixed(2)}</span>
+        <span className="band-go mono" aria-hidden="true">
+          compare →
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+// An unresolved entity with no candidate to weigh against — nothing to fold into, so just Keep it.
+function NewEntityRow({ it }: { it: Finding }) {
+  const eid = it.entity_id!;
+  return (
+    <li className="band-row">
+      <FlipButton label="keep" act={keepApartAct(eid)} />
+      <span className="unres-solo">
+        {it.link ? (
+          <Link className="r-into" to={`/wiki/entity/${it.link}`}>
+            {it.ref}
+          </Link>
+        ) : (
+          <span className="r-into">{it.ref}</span>
+        )}
+        <span className="r-reason muted">no near-match — looks new</span>
+      </span>
+    </li>
   );
 }
 

@@ -741,6 +741,8 @@ def merge_entities(
     # dst's own, so this list of ids is the only way an unmerge can repoint exactly the right ones back.
     moved_claims = list(session.scalars(select(Claim.id).where(Claim.entity_id == from_id)))
     moved_mentions = list(session.scalars(select(Mention.id).where(Mention.entity_id == from_id)))
+    prior_status = src.status  # so undo restores the source's own status, not a blanket "active" —
+    # an unresolved entity folded into its match comes back unresolved, not silently resolved.
 
     session.execute(update(Mention).where(Mention.entity_id == from_id).values(entity_id=into_id))
     session.execute(update(Claim).where(Claim.entity_id == from_id).values(entity_id=into_id))
@@ -774,7 +776,7 @@ def merge_entities(
         moved={
             "claims": moved_claims, "mentions": moved_mentions,
             "aliases_added": aliases_added, "acronyms_added": acronyms_added,
-            "renamed_from": renamed_from,
+            "renamed_from": renamed_from, "from_status": prior_status,
         },
     )
     session.add(merge)
@@ -824,7 +826,7 @@ def unmerge_entities(session: Session, merge: EntityMerge) -> Entity:
         if dst.aliases:
             dst.aliases = [a for a in dst.aliases if a != renamed_from]
 
-    src.status = "active"
+    src.status = moved.get("from_status") or "active"  # restore its own prior status (older rows: active)
     src.wiki_path = None  # caller rewrites src's real page and sets the path via upsert_wiki_page
 
     session.delete(merge)

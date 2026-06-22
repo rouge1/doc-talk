@@ -162,6 +162,32 @@ def plan_duplicates(session, *, refresh: bool = False) -> dict:
     return result
 
 
+# --- the candidate an unresolved entity most likely duplicates ------------------------------------
+
+
+def best_candidate(session, e: Entity) -> dict | None:
+    """The single active entity an unresolved one most likely duplicates — the candidate side of its
+    resolve decision, so the Unresolved card can show the same entity~candidate pair the Duplicates
+    bands do. Narrow to same-type actives whose norm_key overlaps (the cheap lint rail), score each
+    with the resolver's signals, return the top as ``{id, name, stem, score, signals}``. ``None`` when
+    nothing clears the overlap floor — the entity is genuinely new, with nothing to fold into."""
+    e_toks = set(e.norm_key.split())
+    best: tuple[float, Entity, dict] | None = None
+    for a in session.scalars(select(Entity).where(Entity.status == "active")):
+        if a.id == e.id or not _types_compatible(a.type, e.type):
+            continue
+        if _jaccard(e_toks, set(a.norm_key.split())) < _DUP_JACCARD:
+            continue
+        comp, sig = score_pair(session, e, a)
+        if best is None or comp > best[0]:
+            best = (comp, a, sig)
+    if best is None:
+        return None
+    comp, a, sig = best
+    return {"id": a.id, "name": a.name, "stem": pages.slug_for(a),
+            "score": round(comp, 2), "signals": sig}
+
+
 # --- pair comparison: the evidence a human reads to make the same-or-different call ----------------
 
 

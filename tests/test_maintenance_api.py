@@ -150,6 +150,103 @@ def test_undo_is_admin_gated(client, monkeypatch):
     get_settings.cache_clear()
 
 
+def test_keep_unresolved_then_reopen_round_trips(client):
+    """Resolving an unresolved entity: Keep promotes it to active (it leaves the lint queue and the
+    unresolved finding carries its id to act on), and reopen sends it back."""
+    from doctalk.db.models import Entity
+
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        eid = repo.create_entity(s, name="Channel Sounding", type_="concept",
+                                 norm_key="channel sounding", status="unresolved").id
+
+    # the lint endpoint surfaces it with its entity_id, so the dashboard can Keep it in place
+    groups = {g["kind"]: g for g in client.get("/api/maintenance/lint").json()["groups"]}
+    item = next(i for i in groups["unresolved"]["items"] if i["entity_id"] == eid)
+    assert item["entity_id"] == eid
+
+    res = client.post("/api/maintenance/unresolved/keep", json={"entity_id": eid}).json()
+    assert res["name"] == "Channel Sounding"
+    with session_scope() as s:
+        assert s.get(Entity, eid).status == "active"
+    # can't keep what's already kept
+    assert client.post("/api/maintenance/unresolved/keep", json={"entity_id": eid}).status_code == 409
+
+    client.post("/api/maintenance/unresolved/reopen", json={"entity_id": eid})
+    with session_scope() as s:
+        assert s.get(Entity, eid).status == "unresolved"
+
+
+def _unresolved_with_candidate(s):
+    """An active candidate (with claims + a page) and an unresolved entity whose norm_key overlaps it —
+    the parked twin the resolver couldn't place. ``best_candidate`` should pair them."""
+    repo.upsert_file(s, content_hash="c" * 64, path="/c", filename="c.pdf",
+                     format="pdf", mime="x", byte_size=1)
+    s.flush()
+    fid = repo.get_file_id(s, "c" * 64)
+    cand = repo.create_entity(s, name="Channel Sounding", type_="concept", norm_key="channel sounding")
+    for i in range(3):
+        c = repo.insert_claim(s, entity_id=cand.id, file_id=fid, text=f"Channel Sounding {i}.")
+        repo.insert_claim_sources(s, c.id, [{"file_id": fid, "chunk_id": None}])
+    prov = repo.create_entity(s, name="Channel Sounding (CS)", type_="concept",
+                              norm_key="channel sounding cs", status="unresolved")
+    path = f"entities/{pages.slug_for(cand)}.md"
+    wikirepo.write_page(path, pages.render_entity_page(s, cand))
+    repo.upsert_wiki_page(s, path=path, title=cand.name, kind="entity", entity_id=cand.id)
+    cand.wiki_path = path
+    return prov.id, cand.id
+
+
+def test_merge_unresolved_into_candidate_then_undo_restores_unresolved(client, stub_resolve):
+    """The unification's happy path: the lint finding carries the candidate, /unresolved/merge folds the
+    provisional entity into it (the directional fold — the provisional always loses), and /undo-merge
+    sends it back to the *unresolved* queue, not a blanket 'active'."""
+    from doctalk.db.models import Entity
+
+    wikirepo.ensure_scaffold()
+    with session_scope() as s:
+        prov, cand = _unresolved_with_candidate(s)
+
+    # the lint endpoint pairs the unresolved entity with its top candidate, so the card can offer merge
+    groups = {g["kind"]: g for g in client.get("/api/maintenance/lint").json()["groups"]}
+    item = next(i for i in groups["unresolved"]["items"] if i["entity_id"] == prov)
+    assert item["candidate"] and item["candidate"]["id"] == cand
+
+    res = client.post("/api/maintenance/unresolved/merge",
+                      json={"entity_id": prov, "into_id": cand}).json()
+    assert res["folded"] == "Channel Sounding (CS)" and res["into"] == "Channel Sounding" and res["sha"]
+    with session_scope() as s:
+        assert s.get(Entity, prov).status == "merged_into"
+        assert s.get(Entity, cand).status == "active"
+    # can't fold it twice — the provisional one is already gone
+    assert client.post("/api/maintenance/unresolved/merge",
+                       json={"entity_id": prov, "into_id": cand}).status_code == 409
+
+    undo = client.post("/api/maintenance/undo-merge", json={"sha": res["sha"]}).json()
+    assert undo["count"] == 1
+    with session_scope() as s:
+        assert s.get(Entity, prov).status == "unresolved"  # back in the queue, not silently resolved
+    # and it's surfaced by lint again, candidate and all
+    groups = {g["kind"]: g for g in client.get("/api/maintenance/lint").json()["groups"]}
+    assert any(i["entity_id"] == prov for i in groups["unresolved"]["items"])
+
+
+def test_merge_unresolved_is_admin_gated(client, monkeypatch):
+    monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
+    get_settings.cache_clear()
+    blocked = client.post("/api/maintenance/unresolved/merge", json={"entity_id": 1, "into_id": 2})
+    assert blocked.status_code == 401
+    get_settings.cache_clear()
+
+
+def test_keep_unresolved_is_admin_gated(client, monkeypatch):
+    monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
+    get_settings.cache_clear()
+    blocked = client.post("/api/maintenance/unresolved/keep", json={"entity_id": 1})
+    assert blocked.status_code == 401
+    get_settings.cache_clear()
+
+
 def test_admin_gate_blocks_mutations_when_token_set(client, monkeypatch):
     monkeypatch.setenv("DOCTALK_ADMIN_TOKEN", "s3cret")
     get_settings.cache_clear()

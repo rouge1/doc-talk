@@ -168,6 +168,25 @@ def fold_pair(session, a_id: int, b_id: int) -> tuple[int, str, str] | None:
     return merge_id, folded_name, keep.name
 
 
+def fold_into(session, drop_id: int, keep_id: int, *, reason: str) -> tuple[int, str, str] | None:
+    """Fold an unresolved entity into the active candidate it duplicates — a *directional* fold: unlike
+    ``fold_pair`` there's no richer-wins ranking, the provisional ``drop`` always loses and the entity
+    already in the wiki (``keep``) survives. Otherwise identical (writes ``index.md``; the caller commits
+    and stamps the sha, so it undoes by the same ``/undo-merge`` path). Returns ``(merge_id, folded_name,
+    survivor_name)``, or ``None`` if ``drop`` isn't unresolved or ``keep`` isn't active (someone already
+    resolved or merged one of them). The merge records ``drop``'s prior status, so undo restores it to
+    the unresolved queue rather than quietly promoting it to active."""
+    drop, keep = session.get(Entity, drop_id), session.get(Entity, keep_id)
+    if drop is None or keep is None or drop.id == keep.id:
+        return None
+    if drop.status != "unresolved" or keep.status != "active":
+        return None
+    folded_name = drop.name
+    merge_id = apply_merge(session, drop, keep, reason=reason)
+    wikirepo.write_page("index.md", pages.render_index(session))
+    return merge_id, folded_name, keep.name
+
+
 def undo_merge(session, merge) -> tuple[str, str]:
     """Reverse one merge: repoint its claims/mentions back (``repo.unmerge_entities``), restore the
     resurrected entity's name vector + real page, and rewrite the survivor's now-thinner page. Returns

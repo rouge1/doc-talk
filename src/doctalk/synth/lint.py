@@ -28,6 +28,8 @@ class Finding:
     detail: str
     ref: str | None = None
     link: str | None = None   # a wiki stem this finding points at, so the dashboard can link to the page
+    entity_id: int | None = None  # the entity this finding is about, for an in-place action (Keep)
+    candidate: dict | None = None  # for unresolved: the active entity it most likely duplicates
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
@@ -74,8 +76,11 @@ def _unsupported_claims(session) -> list[Finding]:
 def _unresolved(session) -> list[Finding]:
     from sqlalchemy import select
 
+    from doctalk.synth.dedupe import best_candidate  # lazy: dedupe imports lint at module load
+
     out = [
-        Finding("unresolved", "provisional #unresolved page", e.name, link=pages.slug_for(e))
+        Finding("unresolved", "provisional #unresolved page", e.name,
+                link=pages.slug_for(e), entity_id=e.id, candidate=best_candidate(session, e))
         for e in session.scalars(select(Entity).where(Entity.status == "unresolved"))
     ]
     n = len(repo.get_open_reviews(session))
