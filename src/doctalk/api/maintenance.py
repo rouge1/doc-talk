@@ -39,7 +39,7 @@ def _group(findings: list[lint.Finding]) -> list[dict[str, Any]]:
         by_kind[f.kind].append(f)
     return [
         {"kind": kind, "count": len(items),
-         "items": [{"detail": f.detail, "ref": f.ref} for f in items]}
+         "items": [{"detail": f.detail, "ref": f.ref, "link": f.link} for f in items]}
         for kind, items in sorted(by_kind.items())
     ]
 

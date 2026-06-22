@@ -618,10 +618,13 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .split-receipt-head .r-check.ok { color: var(--good); }
 .split-msg { font-size: .9rem; color: var(--ink); }
 .split-receipt-head .undo { margin-left: auto; }
-.split-row { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: .6rem;
-  padding: .22rem 0; font-size: .86rem; }
-.split-row .r-from { text-align: left; font-family: var(--serif); color: var(--ink-soft); }
-.split-slug { font-size: .8rem; color: var(--ochre); }
+.split-row { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: .55rem;
+  padding: .28rem 0; font-size: .86rem; }
+.split-row .r-from { text-align: left; font-family: var(--serif); color: var(--ink);
+  text-decoration: none; border-bottom: 1px solid var(--rule-2); }
+.split-row .r-from:hover { border-bottom-color: var(--ochre); color: var(--ochre); }
+.split-row .r-reason { font-size: .8rem; }
+.split-slug { font-size: .8rem; color: var(--ochre); white-space: nowrap; }
 .manual-left { margin-top: .8rem; }
 
 /* the outcome slip — an action's result, filed flush under the case it belongs to (not a free toast).
@@ -696,8 +699,19 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .band-ev summary::before { content: "▸ "; color: var(--ink-soft); }
 .band-ev[open] summary::before { content: "▾ "; }
 .band-ev ul { list-style: none; margin: .45rem 0 0; padding: 0; }
+/* a pair row: an inline merge action on the left, then the link to its side-by-side comparison */
+.band-row { display: flex; align-items: baseline; gap: .7rem; }
+.band-merge { flex: none; width: 4.4rem; text-align: center; font-family: var(--mono); font-size: .6rem;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ochre); background: transparent;
+  border: 1px solid var(--rule); border-radius: 2px; padding: .2rem .3rem; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s; }
+.band-merge:hover { border-color: var(--ochre); background: rgba(154,107,63,.08); }
+.band-merge:disabled { opacity: .5; cursor: default; }
+.band-merge.done { color: var(--good); border-color: var(--good); }
+.band-merge.done:hover { background: rgba(74,103,65,.1); }
+.band-merge.error { color: var(--oxblood); border-color: var(--oxblood); }
 /* each pair links to its side-by-side comparison — read both contexts, judge same-or-different */
-.band-pair { display: grid; grid-template-columns: 1fr auto 1fr auto auto; align-items: baseline;
+.band-pair { flex: 1; display: grid; grid-template-columns: 1fr auto 1fr auto auto; align-items: baseline;
   gap: .6rem; padding: .3rem .4rem; font-size: .88rem; text-decoration: none; color: inherit;
   border-radius: 2px; transition: background .12s; }
 .band-pair:hover { background: rgba(154,107,63,.07); }
@@ -812,6 +826,49 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .finding-ev ul { margin: .5rem 0 0 1.2rem; padding: 0; list-style: none; }
 .finding-ev li { font-size: .86rem; color: var(--ink-soft); padding: .2rem 0; line-height: 1.4; }
 .fg-ref { color: var(--ochre); font-size: .8rem; margin-right: .4rem; }
+.fg-link { font-family: var(--mono); text-decoration: none; border-bottom: 1px solid transparent; }
+.fg-link:hover { border-bottom-color: var(--ochre); }
+
+/* the uniform issue case anatomy — why / fix / undo, one row each, on the same rail as the acts */
+.anatomy { margin: .1rem 0 .5rem; display: flex; flex-direction: column; gap: .55rem; }
+.ana-row { display: grid; grid-template-columns: 8.5rem 1fr; gap: 1.4rem; align-items: baseline; }
+.ana-row dt { font-family: var(--mono); font-size: .64rem; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ochre-lt); }
+.ana-row dd { margin: 0; color: var(--ink-soft); font-size: 1rem; line-height: 1.55; max-width: 58ch; }
+
+/* the three classes — decide / fix / clear. each is a bracketed container: a coloured spine runs its
+   full height (ochre = a to-do class, green = clear) with the header and its cards nested inside, so
+   membership is unmistakable and the spine's end marks the section's end. Recent activity has no spine,
+   so it reads as separate. The cards drop their own coloured edge — the spine owns the grouping now. */
+.klass { margin: 0 0 2.6rem; padding: 0 0 .5rem 1.5rem; border-left: 3px solid var(--ochre-lt); }
+.klass.good { border-left-color: var(--good); }
+.klass-head { display: flex; align-items: baseline; gap: 1rem; padding-bottom: .8rem;
+  border-bottom: 1px solid var(--rule); margin-bottom: 1.4rem; }
+.klass-n { font-family: var(--serif); font-size: 2.1rem; line-height: 1; color: var(--ochre);
+  font-variant-numeric: tabular-nums; min-width: 1.6rem; }
+.klass.good .klass-n { color: var(--good); }
+.klass-title { font-family: var(--serif); font-weight: 600; font-size: 1.45rem; line-height: 1.1;
+  color: var(--ink); margin: 0; }
+.klass-blurb { margin: .2rem 0 0; color: var(--ink-soft); font-size: .94rem; line-height: 1.45; max-width: 62ch; }
+.klass-empty { color: var(--ink-soft); font-size: .94rem; font-style: italic; margin: 0; }
+.ac-list { margin: 0; color: var(--ink-soft); font-size: .94rem; line-height: 1.6; }
+/* cards nested in a class: a neutral thin edge, not their own colour — the section spine groups them */
+.klass .case { border-left: 1px solid var(--rule); margin: 1.3rem 0; }
+.klass .case:last-of-type { margin-bottom: .2rem; }
+
+/* ledger numbers are links to their section — keep the cell look, add a quiet hover affordance */
+.ledger .statlink { text-decoration: none; cursor: pointer; transition: border-color .12s ease; }
+.ledger .statlink:hover .l { color: var(--ochre); }
+.ledger .statlink:hover .n { text-decoration: underline; text-decoration-thickness: 1px;
+  text-underline-offset: 4px; }
+.ledger .statlink:focus-visible { outline: 2px solid var(--ochre); outline-offset: 3px; }
+
+/* recent activity — the undo log. a record of what you've done, lighter than the case cards above */
+.activity { margin: 2.4rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+.activity .empty { margin-top: .4rem; }
+.activity-entry { margin-top: .4rem; }
+
+@media (max-width: 640px) { .ana-row { grid-template-columns: 1fr; gap: .15rem; } }
 
 /* one orchestrated motion: rows settle in, checks stamp, the resolved stamp pops */
 @keyframes settle { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
@@ -835,9 +892,11 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
   .band-ev { margin-left: 0; }
 }
 
-.admin-token { margin-top: 2rem; }
-.admin-token .at-note { max-width: 56ch; font-size: .86rem; margin: .2rem 0 .7rem; }
-.admin-token code { font-family: var(--mono); font-size: .82em; background: var(--card);
+/* admin token — surfaced inline only when an action 401s (oxblood edge: a gated action was blocked) */
+.admin-prompt { margin: 0 0 1.8rem; padding: .85rem 1rem; background: var(--card);
+  border-left: 2px solid var(--oxblood); border-radius: 2px; }
+.admin-prompt .at-note { max-width: 60ch; font-size: .86rem; margin: 0 0 .6rem; }
+.admin-prompt code { font-family: var(--mono); font-size: .82em; background: var(--paper);
   padding: .05rem .3rem; border-radius: 2px; }
 .token-row { display: flex; gap: .6rem; max-width: 30rem; }
 .token-row input {

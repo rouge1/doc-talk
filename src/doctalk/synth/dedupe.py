@@ -44,7 +44,7 @@ def _composite(alias: float, lex: float, emb: float, com: float) -> float:
                + s.resolve_w_embed * emb + s.resolve_w_comention * com)
 
 _BANDS = [
-    ("fold", "fold automatically", "the same entity, written two ways"),
+    ("fold", "confident — confirm in Compare", "the same entity written two ways; open each to fold"),
     ("judge", "let the judge decide", "ambiguous — needs a same-or-different call"),
     ("aside", "probably distinct", "names overlap, but the signals point different ways"),
 ]

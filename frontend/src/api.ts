@@ -224,6 +224,7 @@ export interface PageInfo {
 export interface Finding {
   detail: string;
   ref: string | null;
+  link?: string | null; // a wiki stem this finding points at — the dashboard links the ref to its page
 }
 
 export interface FindingGroup {

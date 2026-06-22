@@ -27,6 +27,7 @@ class Finding:
     kind: str           # orphan | unsupported_claim | unresolved | missing_page | duplicate | …
     detail: str
     ref: str | None = None
+    link: str | None = None   # a wiki stem this finding points at, so the dashboard can link to the page
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
@@ -74,7 +75,7 @@ def _unresolved(session) -> list[Finding]:
     from sqlalchemy import select
 
     out = [
-        Finding("unresolved", "provisional #unresolved page", e.name)
+        Finding("unresolved", "provisional #unresolved page", e.name, link=pages.slug_for(e))
         for e in session.scalars(select(Entity).where(Entity.status == "unresolved"))
     ]
     n = len(repo.get_open_reviews(session))
