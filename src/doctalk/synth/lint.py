@@ -217,13 +217,17 @@ def lint(session, wiki_dir: Path) -> list[Finding]:
 
 
 def audit(session, wiki_dir: Path) -> list[Finding]:
-    from sqlalchemy import select
+    from sqlalchemy import exists, select
 
     out: list[Finding] = []
-    # every cited chunk still exists
-    for cs in session.scalars(select(ClaimSource).where(ClaimSource.chunk_id.is_not(None))):
-        if session.get(Chunk, cs.chunk_id) is None:
-            out.append(Finding("dangling_source", f"claim {cs.claim_id} cites a missing chunk"))
+    # every cited chunk still exists — one NOT EXISTS pass, not a per-source lookup. The old per-row
+    # session.get(Chunk, …) was an N+1 that took ~9s on a full corpus, and the whole findings ledger
+    # (every maintenance number) waits on audit, so the page sat on "·" until it finished.
+    chunk_gone = ~exists().where(Chunk.id == ClaimSource.chunk_id)
+    for cs in session.scalars(
+        select(ClaimSource).where(ClaimSource.chunk_id.is_not(None), chunk_gone)
+    ):
+        out.append(Finding("dangling_source", f"claim {cs.claim_id} cites a missing chunk"))
     # claims with no provenance at all (the invariant guard, from the audit side too)
     sourced = select(ClaimSource.claim_id).distinct()
     for claim in session.scalars(select(Claim).where(Claim.id.not_in(sourced))):
