@@ -300,21 +300,23 @@ export default function Maintenance() {
 
   return (
     <div className="rise maint">
-      <section className="hero compact">
-        <div className="kicker">lint · heal · merge · prune</div>
-        <h1 className="display">Maintenance</h1>
-        <p>
-          Where the wiki drifts. Every issue sorts into three kinds — it <em>needs your call</em>, it's{" "}
-          <em>ready to fix</em>, or it's <em>all clear</em> — and every change is reversible.
-        </p>
+      {/* masthead: identity on the left, live vitals on the right — the counts ride up beside the title
+          rather than in a band below. Each number counts the cards in its class, and links to it. */}
+      <section className="hero compact maint-head">
+        <div className="maint-head-text">
+          <div className="kicker">lint · heal · merge · prune</div>
+          <h1 className="display">Maintenance</h1>
+          <p>
+            Where the wiki drifts. Every issue sorts into three kinds — it <em>needs your call</em>, it's{" "}
+            <em>ready to fix</em>, or it's <em>all clear</em> — and every change is reversible.
+          </p>
+        </div>
+        <div className="ledger">
+          <Stat n={needYou} l="Needs your call" href="#decide" cls={needYou ? "s-running" : "s-done"} />
+          <Stat n={readyToFix} l="Ready to fix" href="#ready" cls={readyToFix ? "s-running" : "s-done"} />
+          <Stat n={clean} l="All clear" href="#clear" cls="s-done" />
+        </div>
       </section>
-
-      {/* vitals strip — each number counts the cards in its class below, and links to that section */}
-      <div className="ledger">
-        <Stat n={needYou} l="Needs your call" href="#decide" cls={needYou ? "s-running" : "s-done"} />
-        <Stat n={readyToFix} l="Ready to fix" href="#ready" cls={readyToFix ? "s-running" : "s-done"} />
-        <Stat n={clean} l="All clear" href="#clear" cls="s-done" />
-      </div>
 
       {note && (
         <div className={`outcome ${note.tone}`} role="status">

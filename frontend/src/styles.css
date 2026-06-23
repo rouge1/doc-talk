@@ -215,6 +215,19 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .hero.compact { padding: .4rem 0 1rem; }
 .hero.compact h1 { font-size: clamp(1.8rem, 5vw, 2.8rem); margin: .3rem 0 0; }
 
+/* Maintenance masthead: the vitals ride up beside the title (identity left, live counts right) rather
+   than in their own band below. Scoped to .maint-head so the shared .ledger idiom (Ingest, Library)
+   stays a full-width strip; here it loses its top rule and slots against the title block, wrapping back
+   to its own row on narrow widths. align-items:flex-end sits the counts on the same shelf as the blurb.
+   The bottom rule closes the masthead off from the first case below (the divider the ledger band used
+   to carry as its top border). */
+.maint-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 1rem 2.5rem; border-bottom: 1px solid var(--rule); margin-bottom: 1.6rem; }
+.maint-head-text { min-width: 0; }
+.maint-head .ledger { margin: 0; border-top: 0; flex: none; }
+.maint-head .ledger .stat { padding-block: 0; }
+.maint-head .ledger .stat:last-child { margin-right: 0; }
+
 .searchbar { display: flex; gap: .6rem; margin: 0 0 1.8rem; }
 .searchbar input {
   flex: 1; padding: .85rem 1rem; font-family: var(--serif); font-size: 1.05rem; color: var(--ink);
