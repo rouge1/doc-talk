@@ -1054,7 +1054,9 @@ function BandRow({
               // keyed by the pair, not the index, so a merged button stays bound to its pair when the
               // gauge re-buckets the sample.
               <li className="band-row" key={`${p.a.id}-${p.b.id}`}>
-                <FlipButton label="merge" act={foldAct(p.a.id, p.b.id)} />
+                <span className="band-actions">
+                  <FlipButton label="merge" act={foldAct(p.a.id, p.b.id)} />
+                </span>
                 <Link className="band-pair" to={`/maintenance/compare/${p.a.id}/${p.b.id}`}>
                   <span className="r-from">{p.a.name}</span>
                   <span className="r-arrow mono">~</span>
@@ -1132,8 +1134,10 @@ function UnresolvedRow({ it }: { it: Finding }) {
   const eid = it.entity_id!;
   return (
     <li className="band-row">
-      <FlipButton label="merge" act={mergeUnresolvedAct(eid, cand.id)} />
-      <FlipButton label="keep apart" wide act={keepApartAct(eid)} />
+      <span className="band-actions">
+        <FlipButton label="merge" act={mergeUnresolvedAct(eid, cand.id)} />
+        <FlipButton label="keep apart" wide act={keepApartAct(eid)} />
+      </span>
       <Link className="band-pair" to={`/maintenance/compare/${eid}/${cand.id}?from=unresolved`}>
         <span className="r-from">{it.ref}</span>
         <span className="r-arrow mono">~</span>
@@ -1147,22 +1151,34 @@ function UnresolvedRow({ it }: { it: Finding }) {
   );
 }
 
-// An unresolved entity with no candidate to weigh against — nothing to fold into, so just Keep it.
+// An unresolved entity with no candidate to weigh against — nothing to fold into, so just Keep it. It
+// reuses the band-pair grid, but its name spans the from/~/into columns and centres across them, so it
+// sits under the middle of "A ~ B" in the paired rows above rather than hugging where the tilde would
+// be. Hidden spacers keep the score/compare columns reserved, and the note floats over the right edge
+// (where a candidate row shows its 0.xx). When it has a page, the whole row is a link that highlights on
+// hover just like a paired row — there's no candidate to compare, so it opens the entity itself.
 function NewEntityRow({ it }: { it: Finding }) {
   const eid = it.entity_id!;
+  const inner = (
+    <>
+      <span className="solo-name">{it.ref}</span>
+      <span className="band-score mono spacer" aria-hidden="true">0.00</span>
+      <span className="band-go mono spacer" aria-hidden="true">compare →</span>
+      <span className="unres-note">no near-match — looks new</span>
+    </>
+  );
   return (
     <li className="band-row">
-      <FlipButton label="keep" act={keepApartAct(eid)} />
-      <span className="unres-solo">
-        {it.link ? (
-          <Link className="r-into" to={`/wiki/entity/${it.link}`}>
-            {it.ref}
-          </Link>
-        ) : (
-          <span className="r-into">{it.ref}</span>
-        )}
-        <span className="r-reason muted">no near-match — looks new</span>
+      <span className="band-actions">
+        <FlipButton label="keep" act={keepApartAct(eid)} />
       </span>
+      {it.link ? (
+        <Link className="band-pair solo" to={`/wiki/entity/${it.link}?from=unresolved`}>
+          {inner}
+        </Link>
+      ) : (
+        <div className="band-pair solo static">{inner}</div>
+      )}
     </li>
   );
 }

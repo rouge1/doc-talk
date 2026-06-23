@@ -1,4 +1,5 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { NavLink, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 import Library from "./routes/Library";
 import Wiki from "./routes/Wiki";
 import Entity from "./routes/Entity";
@@ -14,6 +15,37 @@ import PageView from "./routes/PageView";
 import Passage from "./routes/Passage";
 import Maintenance from "./routes/Maintenance";
 import Compare from "./routes/Compare";
+
+// Remember scroll position per history entry. On a fresh navigation (PUSH/REPLACE) we land at the top;
+// on back/forward (POP) we restore where the user was — which works because useFetch renders cached
+// pages at full height immediately, so there's something to scroll back to. A #hash navigation is left
+// alone (the target route scrolls itself to the anchor).
+function ScrollManager() {
+  const location = useLocation();
+  const navType = useNavigationType();
+  const positions = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const key = location.key;
+    const onScroll = () => positions.current.set(key, window.scrollY);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [location.key]);
+
+  useLayoutEffect(() => {
+    if (navType === "POP") {
+      const y = positions.current.get(location.key);
+      if (y != null) {
+        window.scrollTo(0, y);
+        return;
+      }
+    }
+    if (!location.hash) window.scrollTo(0, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
+
+  return null;
+}
 
 function Masthead() {
   return (
@@ -39,6 +71,7 @@ function Masthead() {
 export default function App() {
   return (
     <>
+      <ScrollManager />
       <Masthead />
       <main>
         <Routes>

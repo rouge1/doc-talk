@@ -170,6 +170,10 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .crumbs { font-family: var(--mono); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
   color: var(--ink-soft); margin-bottom: 1.4rem; }
 .crumbs a { color: var(--ochre); }
+/* entity-page header row: breadcrumb on the left, a Back button (restores scroll) on the right */
+.folio-nav { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+  margin-bottom: 1.4rem; }
+.folio-nav .crumbs { margin-bottom: 0; }
 .folio { display: grid; grid-template-columns: 1fr; gap: 0; }
 .folio .badge { font-family: var(--mono); font-size: .66rem; letter-spacing: .2em; text-transform: uppercase;
   color: var(--ochre); }
@@ -699,8 +703,11 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .band-ev summary::before { content: "▸ "; color: var(--ink-soft); }
 .band-ev[open] summary::before { content: "▾ "; }
 .band-ev ul { list-style: none; margin: .45rem 0 0; padding: 0; }
-/* a pair row: an inline merge action on the left, then the link to its side-by-side comparison */
+/* a pair row: the action(s) on the left, then the link to its side-by-side comparison */
 .band-row { display: flex; align-items: baseline; gap: .7rem; }
+/* a fixed-width action lane, so the pair starts at the same x whether a row has one button (a
+   duplicate / a kept entity) or two (merge + keep apart) — every pair on the page shares one axis. */
+.band-actions { flex: none; width: 9.8rem; display: flex; gap: .4rem; align-items: baseline; }
 .band-merge { flex: none; width: 4.4rem; text-align: center; font-family: var(--mono); font-size: .6rem;
   letter-spacing: .12em; text-transform: uppercase; color: var(--ochre); background: transparent;
   border: 1px solid var(--rule); border-radius: 2px; padding: .2rem .3rem; cursor: pointer;
@@ -711,9 +718,9 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .band-merge.done:hover { background: rgba(74,103,65,.1); }
 .band-merge.error { color: var(--oxblood); border-color: var(--oxblood); }
 /* each pair links to its side-by-side comparison — read both contexts, judge same-or-different */
-.band-pair { flex: 1; display: grid; grid-template-columns: 1fr auto 1fr auto auto; align-items: baseline;
-  gap: .6rem; padding: .3rem .4rem; font-size: .88rem; text-decoration: none; color: inherit;
-  border-radius: 2px; transition: background .12s; }
+.band-pair { position: relative; flex: 1; display: grid; grid-template-columns: 1fr auto 1fr auto auto;
+  align-items: baseline; gap: .6rem; padding: .3rem .4rem; font-size: .88rem; text-decoration: none;
+  color: inherit; border-radius: 2px; transition: background .12s; }
 .band-pair:hover { background: rgba(154,107,63,.07); }
 .band-pair .r-from { text-align: right; color: var(--ink-soft); }
 .band-pair .r-into { font-weight: 600; color: var(--ink); }
@@ -828,20 +835,32 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .fg-ref { color: var(--ochre); font-size: .8rem; margin-right: .4rem; }
 .fg-link { font-family: var(--mono); text-decoration: none; border-bottom: 1px solid transparent; }
 .fg-link:hover { border-bottom-color: var(--ochre); }
-/* unresolved entities — the same same-or-different call as Duplicates, so the same band-row clothes:
-   each entity paired against its top candidate, an inline merge + keep-apart on the left. */
+/* unresolved entities — the same same-or-different call as Duplicates, so the exact same band-row
+   clothes. The rows indent to line up with the duplicate bands' rows above (count 2.6rem + 1rem gap
+   = 3.6rem), so the merge / keep buttons sit directly under the duplicates' merge button and the
+   names share the same centre axis — the two cards read as one system. */
 .unres { margin: .2rem 0 .3rem; }
 .unres + .unres { margin-top: 1.2rem; border-top: 1px solid var(--rule-2); padding-top: 1rem; }
 .unres-head { font-size: .9rem; line-height: 1.5; margin: 0 0 .55rem; max-width: 64ch; }
-.band-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .15rem; }
+.band-rows { list-style: none; margin: 0 0 0 3.6rem; padding: 0;
+  display: flex; flex-direction: column; gap: .15rem; }
 /* a two-word verb ("keep apart") sizes to its text instead of the fixed merge-button width */
 .band-merge.wide { width: auto; white-space: nowrap; padding-left: .5rem; padding-right: .5rem; }
-/* a new entity has no pair — the name sits where the comparison link would, with a plain note */
-.unres-solo { flex: 1; display: flex; align-items: baseline; gap: .6rem; padding: .3rem .4rem; font-size: .88rem; }
-.unres-solo .r-into { color: var(--ink); font-weight: 600; text-decoration: none;
-  border-bottom: 1px solid transparent; }
-.unres-solo a.r-into:hover { border-bottom-color: var(--ochre); color: var(--ochre); }
-.unres-solo .r-reason { font-size: .8rem; }
+/* A new entity has no pair to fold. Its name spans the from/~/into columns (1–3) and centres across
+   them: those two flanking columns are equal 1fr, so their midpoint is the tilde — which lands the name
+   dead-centre under "A ~ B" in the paired rows above, not hugging where the tilde would be. */
+.band-pair.static { cursor: default; }
+.band-pair.static:hover { background: transparent; }
+.band-pair .solo-name { grid-column: 1 / 4; text-align: center; font-family: var(--serif);
+  color: var(--ink-soft); }
+.band-pair:hover .solo-name { color: var(--oxblood); }
+.band-pair.static:hover .solo-name { color: var(--ink-soft); }
+/* Hidden spacers reserve the score / compare columns at the paired-row widths so the grid — and that
+   centre — match exactly. The note floats over the right edge (where a paired row shows its 0.xx)
+   without widening any column. */
+.band-pair .spacer { visibility: hidden; }
+.band-pair .unres-note { position: absolute; right: .4rem; top: 50%; transform: translateY(-50%);
+  white-space: nowrap; color: var(--ink-soft); font-style: italic; font-size: .82rem; }
 
 /* the uniform issue case anatomy — why / fix / undo, one row each, on the same rail as the acts */
 .anatomy { margin: .1rem 0 .5rem; display: flex; flex-direction: column; gap: .55rem; }
@@ -901,9 +920,14 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
   .act-rail { flex-direction: row; align-items: baseline; gap: .6rem; }
   .clash, .receipt-row, .split-row, .band-pair { grid-template-columns: 1fr; gap: .15rem; }
   .r-from, .band-pair .r-from { text-align: left; }
+  .band-pair .solo-name { grid-column: auto; text-align: left; }  /* stack, don't span, on mobile */
   .contract-head { flex-direction: column; gap: .9rem; }
   .split-offer-head { flex-direction: column; align-items: flex-start; gap: .6rem; }
   .band-ev { margin-left: 0; }
+  .band-rows { margin-left: 0; }
+  .band-actions { width: auto; }
+  .band-pair .spacer { display: none; }  /* don't reserve empty rows in the stacked mobile layout */
+  .band-pair .unres-note { position: static; transform: none; white-space: normal; }
 }
 
 /* admin token — surfaced inline only when an action 401s (oxblood edge: a gated action was blocked) */
