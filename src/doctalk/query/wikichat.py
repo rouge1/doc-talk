@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from doctalk.config import get_settings
 from doctalk.query.prompt import format_citations
-from doctalk.query.retriever import retrieve
+from doctalk.query.retriever import apply_relevance_floor, retrieve
 from doctalk.query.wiki import retrieve_pages
 from doctalk.query.wikiprompt import build_wiki_messages, format_wiki_citations
 
@@ -28,6 +29,13 @@ def answer(
     (``synth.evaluate``) whether the answer deserves a ``wiki/queries/`` page."""
     pages = retrieve_pages(question, k=k_pages)
     chunks = retrieve(question, k=k_chunks, file_id=file_id)
+    # Relevance floor on both substrates: off-topic neighbors the ANN/bi-encoder returned only to fill
+    # k would otherwise become confident, unrelated answer sentences (a cat question drifting into
+    # "PAwR" and "eggs"). Chunks keep their single best match (keep_top); pages drop entirely when none
+    # is relevant (keep_top=False) — there's no on-topic page, so chunk-RAG should carry the answer.
+    _s = get_settings()
+    chunks = apply_relevance_floor(chunks, _s.chat_relevance_floor, _s.chat_relevance_min)
+    pages = apply_relevance_floor(pages, _s.chat_relevance_floor, _s.chat_relevance_min, keep_top=False)
 
     if not pages and not chunks:
         return {"answer": "I don't find anything about that in the corpus.",
@@ -40,8 +48,6 @@ def answer(
 
     # Presenter pass: typeset the raw draft into a clean dispatch (best-effort; raw on failure).
     formatted = text
-    from doctalk.config import get_settings
-
     if get_settings().chat_format:
         from doctalk.query.format import format_answer
 

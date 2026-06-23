@@ -119,13 +119,24 @@ export default function Chat() {
                 <section className="apparatus">
                   <div className="rule-head"><h2>Sources</h2></div>
                   <ol className="sources">
-                    {data.citations.map((c) => (
-                      <li key={c.n}>
-                        <Link to={sourcePath(c)}>
-                          {c.file} · {c.chapter ?? "—"} · p.{c.page}
-                        </Link>
-                      </li>
-                    ))}
+                    {data.citations.map((c) =>
+                      c.kind === "image" ? (
+                        // A photo source: thumbnail + filename, linking to the gallery (not a doc page).
+                        <li key={c.n} className="source-image">
+                          <Link to={sourcePath(c)}>
+                            <img src={c.image ?? `/api/image/${c.file_id}`} alt={c.file} loading="lazy"
+                                 onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                            <span>{c.file}</span>
+                          </Link>
+                        </li>
+                      ) : (
+                        <li key={c.n}>
+                          <Link to={sourcePath(c)}>
+                            {c.file} · {c.chapter ?? "—"} · p.{c.page}
+                          </Link>
+                        </li>
+                      ),
+                    )}
                   </ol>
                 </section>
               )}

@@ -82,16 +82,19 @@ export interface QueryPage {
 }
 
 export interface SearchHit {
+  kind?: "passage" | "image"; // an image hit renders as a plate; absent = passage (back-compat)
   chunk_id: number;
   file: string;
   chapter: string | null;
   page: number;
-  text: string;
+  text: string; // for an image hit this is the VLM caption (the matched/highlightable text)
   score: number;
   rerank_score: number | null;
   content_hash: string | null;
   chapter_id: number | null;
   source?: "keyword" | "semantic" | "both" | null; // which arm surfaced the hit
+  file_id?: number | null; // image hit only
+  image?: string | null; // image hit only: URL to the photo bytes
 }
 
 export type SearchMode = "hybrid" | "simple";
@@ -110,12 +113,15 @@ export interface WikiCitation {
 
 export interface Citation {
   n: number;
+  kind?: "passage" | "image"; // an image source links to the gallery and shows a thumbnail
   file: string;
   chapter: string | null;
   page: number;
   content_hash: string | null;
   chapter_id: number | null;
   chunk_id: number | null;
+  file_id?: number | null; // image citation only
+  image?: string | null; // image citation only: URL to the photo bytes
 }
 
 export interface ChatAnswer {
@@ -470,6 +476,7 @@ const OFFICE = /\.(docx|doc|odt|rtf|pptx|ppt|xlsx)$/i;
 // searched; without it (an Ask citation) the whole cited chunk is highlighted via ?focus.
 export const sourcePath = (
   h: {
+    kind?: "passage" | "image";
     content_hash: string | null;
     file?: string | null;
     page?: number | null;
@@ -478,6 +485,8 @@ export const sourcePath = (
   },
   highlight?: string,
 ) => {
+  // An image source isn't a document page — send it to the gallery (the photo browser).
+  if (h.kind === "image") return "/gallery";
   if (!h.content_hash) return "#";
   const hl = highlight ? `q=${encodeURIComponent(highlight)}` : "";
   if (reExt(h.file, PDF) && h.page) {

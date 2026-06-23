@@ -539,13 +539,16 @@ def ask(
 
 @app.command()
 def rebuild_index() -> None:
-    """Regenerate the LanceDB text index from MySQL (the truth store). LanceDB is derived."""
+    """Regenerate the LanceDB text + caption indexes from MySQL (the truth store). LanceDB is
+    derived: the text chunks and each photo's VLM caption (its searchable text) are re-embedded."""
     from doctalk.models.embed import embed_passages
     from doctalk.vector import store
     from doctalk.vector.store import NO_CHAPTER
 
     store.drop_text_table()
+    store.drop_caption_table()
     total = 0
+    captions = 0
     with session_scope() as session:
         for file_id in repo.get_all_file_ids(session):
             chunks = repo.get_chunks(session, file_id)
@@ -565,7 +568,15 @@ def rebuild_index() -> None:
                 ]
             )
             total += len(chunks)
-    typer.echo(f"rebuilt text index: {total} chunks")
+        # Image captions: embedded in the same text space, so a plain search / Ask finds the photo.
+        for file_id in repo.get_all_image_file_ids(session):
+            image = repo.get_image(session, file_id)
+            caption = (image.vlm_description or "").strip() if image else ""
+            if not caption:
+                continue
+            store.add_captions([{"file_id": file_id, "vector": embed_passages([caption])[0]}])
+            captions += 1
+    typer.echo(f"rebuilt text index: {total} chunks, {captions} image captions")
 
 
 @app.command()

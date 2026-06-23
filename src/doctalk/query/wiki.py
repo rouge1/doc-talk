@@ -28,8 +28,9 @@ class PageHit:
     name: str
     type: str
     path: str | None
-    score: float
+    score: float  # cosine name+definition relevance (the bi-encoder pre-gate)
     claims: list[PageClaim] = field(default_factory=list)
+    rerank_score: float | None = None  # cross-encoder relevance (0-1); set when _rerank_pages runs
 
 
 def _embed_query(text: str) -> list[float] | None:
@@ -69,12 +70,15 @@ def _rerank_pages(question: str, hits: list[PageHit], k: int) -> list[PageHit]:
     chunk retriever's rerank pass; degrades to bi-encoder order if the model is unavailable.
     """
     from doctalk.models import rerank as rr
+    from doctalk.query.retriever import _sigmoid
 
     try:
         scores = rr.rerank(question, [_page_doc(h) for h in hits])
     except Exception:  # noqa: BLE001 - no reranker model: fall back to ANN order
         return hits[:k]
-    return [h for h, _ in sorted(zip(hits, scores), key=lambda hs: hs[1], reverse=True)][:k]
+    for h, raw in zip(hits, scores):  # store the 0-1 relevance so the floor can read it (as chunks do)
+        h.rerank_score = round(_sigmoid(raw), 4)
+    return sorted(hits, key=lambda h: h.rerank_score or 0.0, reverse=True)[:k]
 
 
 def retrieve_pages(question: str, k: int = 6, *, min_score: float | None = None) -> list[PageHit]:
@@ -131,6 +135,8 @@ def retrieve_pages(question: str, k: int = 6, *, min_score: float | None = None)
             )
             if not use_rerank and len(hits) >= k:
                 break
+    # Pages carry their cross-encoder ``rerank_score`` (set in _rerank_pages) so the chat path can
+    # apply its relevance floor; retrieve_pages itself stays a pure cosine-gated + reranked listing.
     if use_rerank and hits:
         return _rerank_pages(question, hits, k)
     return hits[:k]

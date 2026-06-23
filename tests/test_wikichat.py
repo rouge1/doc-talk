@@ -21,7 +21,7 @@ from doctalk.query.wikiprompt import build_wiki_messages, format_wiki_citations
 
 def _page():
     return SimpleNamespace(
-        name="Cake", type="product", path="entities/cake.md",
+        name="Cake", type="product", path="entities/cake.md", score=0.9, rerank_score=0.9,
         claims=[SimpleNamespace(text="Bake for 30 minutes.", sources=["a.pdf p.1"])],
     )
 

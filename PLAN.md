@@ -28,6 +28,12 @@ data"). New project at **`/data/python/doc-talk`** (importable package **`doctal
   similarity + shared metadata, don't force it.
 - **Documents are the primary corpus; photos play a supporting role** — images enrich document/entity
   pages as evidence rather than driving their own synthesis. (Earlier framing over-weighted photos.)
+  *Retrieval, though, is unified:* each photo's VLM caption is embedded into the **same bge text
+  space** as document chunks (the `embed_caption` stage → `image_captions` index), so a plain
+  Search / Ask surfaces a photo by what it depicts, fused into one ranking. This is a retrieval
+  policy, **not** a synthesis one — an image can be a search result and an Ask citation while still
+  never authoring its own wiki page. The Gallery's CLIP text→image index stays as the visual-recall
+  surface; the caption bridge is what makes the corpus feel like one program, not two.
 
 ### Hard constraint discovered: GPU = RTX 3070 Ti Laptop, **8 GB VRAM** (20 cores, 31 GB RAM)
 You cannot hold VLM + chat LLM + CLIP + embeddings resident at once. The design **serializes GPU

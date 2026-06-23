@@ -36,16 +36,24 @@ def build_messages(question: str, hits: list[Any]) -> list[dict[str, str]]:
 
 def format_citations(hits: list[Any]) -> list[dict[str, Any]]:
     # content_hash/chapter_id are optional (getattr) so this stays duck-typed: it works on any
-    # object with file/chapter/page, and adds link targets when the hit carries them.
-    return [
-        {
-            "n": i,
-            "file": h.file,
-            "chapter": h.chapter,
-            "page": h.page,
-            "content_hash": getattr(h, "content_hash", None),
-            "chapter_id": getattr(h, "chapter_id", None),
-            "chunk_id": getattr(h, "chunk_id", None),
-        }
-        for i, h in enumerate(hits, start=1)
-    ]
+    # object with file/chapter/page, and adds link targets when the hit carries them. An image hit
+    # (kind == "image") carries a file_id + photo URL so the Sources rail can show it as a plate.
+    out: list[dict[str, Any]] = []
+    for i, h in enumerate(hits, start=1):
+        kind = getattr(h, "kind", "passage")
+        file_id = getattr(h, "file_id", None)
+        out.append(
+            {
+                "n": i,
+                "kind": kind,
+                "file": h.file,
+                "chapter": h.chapter,
+                "page": h.page,
+                "content_hash": getattr(h, "content_hash", None),
+                "chapter_id": getattr(h, "chapter_id", None),
+                "chunk_id": getattr(h, "chunk_id", None),
+                "file_id": file_id,
+                "image": f"/api/image/{file_id}" if kind == "image" and file_id else None,
+            }
+        )
+    return out

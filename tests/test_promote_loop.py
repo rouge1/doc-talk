@@ -116,7 +116,8 @@ def test_same_shape_different_subject_forks_a_new_page(db, monkeypatch):
 def _stub_chat_stack(monkeypatch):
     monkeypatch.setattr(wikichat, "retrieve_pages",
                         lambda q, k=6: [SimpleNamespace(name="Cake", type="product",
-                                                        path="entities/cake.md", claims=[])])
+                                                        path="entities/cake.md", claims=[],
+                                                        score=0.9, rerank_score=0.9)])
     monkeypatch.setattr(wikichat, "retrieve", lambda q, k=6, file_id=None: [])
     import doctalk.models.chat as chatmod
     monkeypatch.setattr(chatmod, "chat", lambda messages, **kw: "A long synthesized answer.")

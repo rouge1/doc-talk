@@ -34,10 +34,10 @@ def test_format_citations_numbers_from_one():
     hits = [_hit("a.pdf", "Ch 1", 5, "x"), _hit("a.pdf", "Ch 2", 9, "y")]
     cites = format_citations(hits)
     assert cites == [
-        {"n": 1, "file": "a.pdf", "chapter": "Ch 1", "page": 5,
-         "content_hash": None, "chapter_id": None, "chunk_id": None},
-        {"n": 2, "file": "a.pdf", "chapter": "Ch 2", "page": 9,
-         "content_hash": None, "chapter_id": None, "chunk_id": None},
+        {"n": 1, "kind": "passage", "file": "a.pdf", "chapter": "Ch 1", "page": 5,
+         "content_hash": None, "chapter_id": None, "chunk_id": None, "file_id": None, "image": None},
+        {"n": 2, "kind": "passage", "file": "a.pdf", "chapter": "Ch 2", "page": 9,
+         "content_hash": None, "chapter_id": None, "chunk_id": None, "file_id": None, "image": None},
     ]
 
 

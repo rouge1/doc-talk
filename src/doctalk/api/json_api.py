@@ -206,6 +206,8 @@ def search(q: str = "", k: int = 8, mode: str = "hybrid") -> dict:
         "mode": mode,
         "hits": [
             {
+                # getattr keeps this duck-typed (the test mocks hits as bare namespaces).
+                "kind": getattr(h, "kind", "passage"),
                 "chunk_id": h.chunk_id,
                 "file": h.file,
                 "chapter": h.chapter,
@@ -216,6 +218,12 @@ def search(q: str = "", k: int = 8, mode: str = "hybrid") -> dict:
                 "content_hash": h.content_hash,
                 "chapter_id": h.chapter_id,
                 "source": h.source,
+                # An image hit carries its file id + a URL so the result renders as a plate; the
+                # ``text`` field holds the caption (the matched/highlightable text).
+                "file_id": getattr(h, "file_id", None),
+                "image": (
+                    f"/api/image/{h.file_id}" if getattr(h, "kind", "passage") == "image" else None
+                ),
             }
             for h in hits
         ],

@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     rerank_enabled: bool = True
     rerank_model: str = "BAAI/bge-reranker-base"
     rerank_candidates: int = 30  # ANN hits fetched, then re-scored down to top_k
+    # Chat relevance floor: before chunks feed the LLM, drop any scoring below ``max(top × floor,
+    # min)``. A narrow query ("cat?") returns one strong match plus weak filler the ANN adds only to
+    # reach k; without a floor the model summarizes that filler into confident, off-topic answer
+    # sentences. The relative term adapts to query strength; the absolute ``min`` catches the case
+    # where the reranker is flat and unsure (every score near zero, so ratios are meaningless). The
+    # single best hit always survives. Set floor=0 to disable the relative term.
+    chat_relevance_floor: float = 0.25
+    chat_relevance_min: float = 0.01
     # Simple (keyword) search: max chunks scanned for the lexical LIKE match before ranking. Also the
     # per-arm candidate pool size for hybrid fusion (RRF of the lexical + dense arms).
     keyword_candidates: int = 200

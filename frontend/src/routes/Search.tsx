@@ -175,25 +175,57 @@ export default function Search() {
       {q && loading && <div className="loading">Searching the index…</div>}
       {error && <div className="empty">Search failed — is the server running?</div>}
       {data && q && !loading && data.hits.length === 0 && (
-        <div className="empty">No passages matched “{q}”.</div>
+        <div className="empty">
+          {mode === "simple" ? (
+            <>
+              No exact matches for “{q}”.{" "}
+              {/* Simple is literal — a plural or paraphrase won't match. Point at the mode that does. */}
+              <button type="button" className="link-btn" onClick={() => run(q, "hybrid")}>
+                Try Hybrid for meaning →
+              </button>
+            </>
+          ) : (
+            <>Nothing matched “{q}”.</>
+          )}
+        </div>
       )}
 
       <div className="results">
-        {data?.hits.map((h, i) => (
-          <Link key={i} className="result rise" style={{ animationDelay: `${i * 30}ms` }}
-                to={sourcePath(h, q)}>
-            <div className="result-head">
-              <span className="score mono tnum">
-                {(h.rerank_score ?? h.score).toFixed(2)}
-              </span>
-              <span className="loc mono">{h.file} · {h.chapter ?? "—"} · p.{h.page}</span>
-              {h.source && <span className={`arm mono arm-${h.source}`}>{ARM_LABEL[h.source]}</span>}
-            </div>
-            <p className="snippet">
-              {highlightSnippet(h.text, q)}
-            </p>
-          </Link>
-        ))}
+        {data?.hits.map((h, i) =>
+          h.kind === "image" ? (
+            // A photo, matched by its VLM caption. The thumbnail signals it's an image; clicking
+            // opens the Gallery's visual search for the same words (where this plate ranks high) —
+            // the two surfaces are one corpus, not two programs.
+            <Link key={i} className="result result-image rise" style={{ animationDelay: `${i * 30}ms` }}
+                  to={`/gallery?q=${encodeURIComponent(q)}`}>
+              <img className="result-thumb" src={h.image ?? `/api/image/${h.file_id}`}
+                   alt={h.file} loading="lazy"
+                   onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              <div className="result-body">
+                <div className="result-head">
+                  <span className="score mono tnum">{(h.rerank_score ?? h.score).toFixed(2)}</span>
+                  <span className="loc mono">{h.file}</span>
+                  {h.source && <span className={`arm mono arm-${h.source}`}>{ARM_LABEL[h.source]}</span>}
+                </div>
+                <p className="snippet">{highlightSnippet(h.text, q)}</p>
+              </div>
+            </Link>
+          ) : (
+            <Link key={i} className="result rise" style={{ animationDelay: `${i * 30}ms` }}
+                  to={sourcePath(h, q)}>
+              <div className="result-head">
+                <span className="score mono tnum">
+                  {(h.rerank_score ?? h.score).toFixed(2)}
+                </span>
+                <span className="loc mono">{h.file} · {h.chapter ?? "—"} · p.{h.page}</span>
+                {h.source && <span className={`arm mono arm-${h.source}`}>{ARM_LABEL[h.source]}</span>}
+              </div>
+              <p className="snippet">
+                {highlightSnippet(h.text, q)}
+              </p>
+            </Link>
+          ),
+        )}
       </div>
     </div>
   );

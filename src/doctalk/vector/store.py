@@ -15,6 +15,7 @@ from doctalk.config import get_settings
 
 TEXT_TABLE = "text_chunks"
 IMAGE_TABLE = "images"
+CAPTION_TABLE = "image_captions"
 ENTITY_TABLE = "entity_names"
 NO_CHAPTER = -1  # null sentinel for chapter_id
 
@@ -152,6 +153,57 @@ def search_images(query_vector: list[float], k: int, where: str | None = None) -
     if where:
         query = query.where(where, prefilter=True)
     return query.to_list()
+
+
+# --- image caption index (text->image via the VLM caption) -------------------------------------
+# A photo's VLM caption embedded in the SAME bge text space as text_chunks, so one query vector
+# searches both and the cosine distances are directly comparable — captions fuse into the chunk
+# ranking instead of living in a parallel (CLIP) space. This is what lets a plain text search /
+# Ask surface a photo by what it depicts. Derived: rebuild-index regenerates it from MySQL.
+
+
+def _ensure_caption_table(dim: int):
+    import pyarrow as pa
+
+    db = _db()
+    if CAPTION_TABLE not in db.table_names():
+        schema = pa.schema(
+            [
+                ("file_id", pa.int64()),
+                ("vector", pa.list_(pa.float32(), dim)),
+            ]
+        )
+        db.create_table(CAPTION_TABLE, schema=schema)
+    return db.open_table(CAPTION_TABLE)
+
+
+def add_captions(rows: list[dict[str, Any]]) -> None:
+    """Append caption rows; each needs file_id/vector. Table created on first insert."""
+    if not rows:
+        return
+    table = _ensure_caption_table(len(rows[0]["vector"]))
+    table.add(rows)
+
+
+def delete_file_caption(file_id: int) -> None:
+    db = _db()
+    if CAPTION_TABLE in db.table_names():
+        db.open_table(CAPTION_TABLE).delete(f"file_id = {file_id}")
+
+
+def drop_caption_table() -> None:
+    db = _db()
+    if CAPTION_TABLE in db.table_names():
+        db.drop_table(CAPTION_TABLE)
+
+
+def search_captions(query_vector: list[float], k: int) -> list[dict]:
+    """ANN search (cosine) over caption vectors. Returns raw Lance rows including ``_distance`` —
+    same metric/space as ``search_text`` so the two result sets are comparable."""
+    db = _db()
+    if CAPTION_TABLE not in db.table_names():
+        return []
+    return db.open_table(CAPTION_TABLE).search(query_vector).metric("cosine").limit(k).to_list()
 
 
 # --- entity name index (resolution blocking — kNN over entity name+definition vectors) ----------

@@ -23,6 +23,17 @@ def _seed_chunks(texts: list[str]):
         ])
 
 
+def _seed_image(filename: str, caption: str, content_hash: str):
+    """Seed an image file + its VLM caption (the searchable text a photo gets indexed by)."""
+    with session_scope() as s:
+        repo.upsert_file(s, content_hash=content_hash, path=f"/{filename}", filename=filename,
+                         format="png", mime="image/png", byte_size=1)
+        s.flush()
+        fid = repo.get_file_id(s, content_hash)
+        repo.upsert_image(s, fid, vlm_description=caption)
+        return fid
+
+
 def test_terms_tokenizes_and_dedupes():
     assert retriever._terms("Bluetooth, bluetooth LE!") == ["bluetooth", "le"]
     assert retriever._terms("   ") == []
@@ -119,6 +130,106 @@ def test_keyword_search_matches_version_token(db):
     ])
     hits = retriever.keyword_search("6.0", k=8)
     assert len(hits) == 1 and "devices" in hits[0].text    # 6.0 isn't split into 6 / 0
+
+
+def test_keyword_search_surfaces_image_by_caption(db):
+    # A photo is findable by what its caption depicts — the same keyword search that hits documents.
+    _seed_chunks(["The advertising channel hopping sequence is defined here."])
+    fid = _seed_image("cat.png", "A black and white cat wearing red headphones.", "c" * 64)
+    hits = retriever.keyword_search("cat", k=8)
+    assert len(hits) == 1
+    h = hits[0]
+    assert h.kind == "image" and h.file_id == fid     # surfaced as an image hit
+    assert h.file == "cat.png" and "cat" in h.text.lower()
+    assert h.source == "keyword"
+
+
+def test_keyword_search_fuses_passages_and_images(db):
+    # A query that matches both a passage and a caption returns both kinds in one ranking.
+    _seed_chunks(["Headphones reduce ambient noise on the channel."])
+    _seed_image("cat.png", "A cat wearing red headphones.", "d" * 64)
+    hits = retriever.keyword_search("headphones", k=8)
+    kinds = {h.kind for h in hits}
+    assert kinds == {"passage", "image"}              # one fused list, both surfaces
+
+
+def test_keyword_search_scoped_to_file_excludes_images(db):
+    # Searching within one document must not pull in corpus-wide photos.
+    _seed_chunks(["A cat naps on the spec."])
+    _seed_image("cat.png", "A cat wearing red headphones.", "e" * 64)
+    with session_scope() as s:
+        doc_fid = repo.get_file_id(s, "a" * 64)
+    hits = retriever.keyword_search("cat", k=8, file_id=doc_fid)
+    assert all(h.kind == "passage" for h in hits)     # no image hits when scoped to a doc
+
+
+def test_dedupe_image_clusters_keeps_canonical():
+    from doctalk.query.retriever import Hit, _dedupe_image_clusters
+    passage = Hit(chunk_id=1, file="d.pdf", chapter=None, page=5, text="t", score=0.9)
+    dup = Hit(chunk_id=0, file="dup.jpg", chapter=None, page=0, text="c", score=0.8,
+              kind="image", file_id=8, cluster_id=2)       # non-canonical, ranks higher
+    orig = Hit(chunk_id=0, file="orig.png", chapter=None, page=0, text="c", score=0.7,
+               kind="image", file_id=2, cluster_id=2)       # canonical (file_id == cluster_id)
+    out = _dedupe_image_clusters([passage, dup, orig])
+    assert [h.file for h in out] == ["d.pdf", "orig.png"]   # passage kept; cluster -> canonical member
+    assert out[1].file_id == 2 and out[1].score == 0.8      # shown as canonical, ranked by the best member
+
+
+def test_dedupe_image_clusters_passes_through_unclustered():
+    from doctalk.query.retriever import Hit, _dedupe_image_clusters
+    a = Hit(chunk_id=0, file="a.png", chapter=None, page=0, text="", score=0.9, kind="image", file_id=3, cluster_id=None)
+    b = Hit(chunk_id=0, file="b.png", chapter=None, page=0, text="", score=0.8, kind="image", file_id=4, cluster_id=None)
+    out = _dedupe_image_clusters([a, b])
+    assert [h.file for h in out] == ["a.png", "b.png"]      # no cluster => both stand alone
+
+
+def test_keyword_search_collapses_image_clusters(db):
+    # Two near-duplicate photos in one cluster collapse to a single hit — the canonical member, even
+    # though the duplicate (more "cat" occurrences) ranks higher on its own.
+    f_orig = _seed_image("kat.png", "A cat wearing red headphones.", "c" * 64)
+    f_dup = _seed_image("kat_dup.jpg", "A cat. A cat. A cat wearing red headphones.", "d" * 64)
+    with session_scope() as s:
+        repo.upsert_image(s, f_orig, cluster_id=f_orig)     # canonical: file_id == cluster_id
+        repo.upsert_image(s, f_dup, cluster_id=f_orig)      # duplicate folds into the same cluster
+    imgs = [h for h in retriever.keyword_search("cat", k=8) if h.kind == "image"]
+    assert len(imgs) == 1 and imgs[0].file_id == f_orig     # one card, the canonical photo
+
+
+def test_relevance_floor_drops_weak_filler():
+    from doctalk.query.retriever import Hit, apply_relevance_floor
+    def h(score, rr=None):
+        return Hit(chunk_id=0, file="f", chapter=None, page=1, text="t", score=score, rerank_score=rr)
+    # Normal "cats" shape: one strong hit, then a weak tail the ANN returned only to fill k.
+    hits = [h(0.5, rr=0.53), h(0.6, rr=0.07), h(0.6, rr=0.005)]   # ranked by rerank, not raw score
+    kept = apply_relevance_floor(hits, 0.25, 0.01)
+    assert len(kept) == 1 and kept[0].rerank_score == 0.53        # only the relevant chunk survives
+    # A broad query where everything is relevant keeps the lot.
+    broad = [h(0, rr=0.9), h(0, rr=0.6), h(0, rr=0.4)]
+    assert len(apply_relevance_floor(broad, 0.25, 0.01)) == 3
+    # No rerank scores: falls back to the raw similarity (well above the absolute min, so relative wins).
+    raw = [h(0.8), h(0.7), h(0.1)]
+    assert [x.score for x in apply_relevance_floor(raw, 0.25, 0.01)] == [0.8, 0.7]
+    # Disabled / empty are no-ops.
+    assert apply_relevance_floor(hits, 0, 0) == hits
+    assert apply_relevance_floor([], 0.25, 0.01) == []
+
+
+def test_relevance_floor_absolute_min_handles_flat_rerank():
+    from doctalk.query.retriever import Hit, apply_relevance_floor
+    def h(rr):
+        return Hit(chunk_id=0, file="f", chapter=None, page=1, text="t", score=0.6, rerank_score=rr)
+    # The "cat?" pathology: the reranker is flat and unsure (everything near zero), so the relative
+    # ratio is meaningless. The absolute min isolates the single best hit; the top always survives
+    # even though it's itself below the min.
+    flat = [h(0.003), h(0.002), h(0.001), h(0.0001)]
+    kept = apply_relevance_floor(flat, 0.25, 0.01)
+    assert len(kept) == 1 and kept[0].rerank_score == 0.003
+    # keep_top=False (the wiki-pages mode): when even the top is below the bar, drop everything —
+    # there's simply no relevant page, so none should reach the LLM.
+    assert apply_relevance_floor(flat, 0.25, 0.01, keep_top=False) == []
+    # but a genuinely relevant set still survives under keep_top=False.
+    strong = [h(0.9), h(0.6), h(0.02)]
+    assert len(apply_relevance_floor(strong, 0.25, 0.01, keep_top=False)) == 2
 
 
 def test_rrf_merge_rewards_agreement_across_arms():

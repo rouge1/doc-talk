@@ -11,6 +11,7 @@ from doctalk.synth.extract import prompt_fingerprint as extract_prompt_fingerpri
 from doctalk.ingest.stages import (
     cluster_image,
     docx_structure,
+    embed_caption,
     embed_image,
     embed_text,
     exif_geo,
@@ -211,6 +212,14 @@ def pipeline_for(file_format: str) -> list[Stage]:
                 vlm_describe.run,
                 model_version="llama3.2-vision",
                 deps=("image_extract",),
+            ),
+            # Embed the caption into the text-chunk space so a plain search / Ask finds the photo
+            # by what it depicts (fused into the chunk ranking, not the parallel CLIP index).
+            Stage(
+                "embed_caption",
+                embed_caption.run,
+                model_version="bge-small-en-v1.5",
+                deps=("vlm_describe",),
             ),
             # Attach the image to related document sections via its description (bge bridge).
             _link_semantic_stage("vlm_describe"),

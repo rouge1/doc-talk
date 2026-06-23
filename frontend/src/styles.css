@@ -284,6 +284,15 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .result .arm-both { color: var(--good); border-color: var(--good); }
 .result .snippet { margin: 0; font-family: var(--serif); font-size: 1rem; color: var(--ink-soft); line-height: 1.55; }
 
+/* An image hit in the fused results: a thumbnail beside the caption, so a photo reads as a photo
+   while keeping the same card rhythm as a passage. The caption is the snippet (matched words light up). */
+.result-image { display: flex; gap: 1rem; align-items: flex-start; }
+.result-image .result-body { flex: 1; min-width: 0; }
+.result-thumb {
+  flex: none; width: 84px; height: 84px; object-fit: cover; border-radius: 3px;
+  border: 1px solid var(--rule); background: var(--paper);
+}
+
 /* ask / chat */
 .thinking { padding: 1rem 0; }
 .q-echo { font-size: .9rem; color: var(--ink); margin-bottom: .6rem; }
@@ -359,6 +368,12 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .sources { margin: 0; padding-left: 1.4rem; font-family: var(--mono); font-size: .78rem; line-height: 1.9; }
 .sources a { color: var(--ink-soft); }
 .sources a:hover { color: var(--ochre); }
+/* A photo source in the Ask rail: thumbnail beside the filename. vertical-align middle keeps the
+   list number centered on the taller thumbnail (flex on the <li> would drop the marker entirely). */
+.sources .source-image a { display: inline-flex; align-items: center; gap: .65rem; vertical-align: middle; }
+.sources .source-image img {
+  width: 60px; height: 60px; object-fit: cover; border-radius: 3px; border: 1px solid var(--rule);
+}
 
 .cite-mark {   /* footnote-style superscript numeral woven into the prose */
   font-family: var(--mono); font-size: .64em; font-weight: 600; color: var(--oxblood);
@@ -489,6 +504,10 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 /* ---- states ------------------------------------------------------------ */
 .loading, .empty { font-family: var(--mono); font-size: .8rem; color: var(--ink-soft); letter-spacing: .06em;
   padding: 2rem 0; }
+/* An inline action inside an empty state (e.g. "Try Hybrid →") — a button that reads as a link. */
+.link-btn { font: inherit; letter-spacing: inherit; color: var(--oxblood); background: none; border: 0;
+  padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-btn:hover { color: var(--ochre); }
 .skeleton { height: 1.1rem; background: linear-gradient(90deg, var(--paper-2), var(--rule-2), var(--paper-2));
   background-size: 200% 100%; animation: shimmer 1.3s infinite; border-radius: 2px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
