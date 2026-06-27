@@ -4,6 +4,7 @@ Commands:
   * ``initdb``  — create tables directly from the models (dev convenience; production uses
                   ``alembic upgrade head``).
   * ``ingest``  — hash a file, upsert its truth-store row, run the resumable DAG, print results.
+  * ``resync``  — backfill stages added since a source was ingested (no re-drop needed).
   * ``stats``   — counts of files and jobs by status.
 """
 
@@ -38,6 +39,7 @@ from doctalk.db.session import get_engine, session_scope
 from doctalk.hashing import hash_file
 from doctalk.ingest.dag import run_dag
 from doctalk.ingest.pipeline import pipeline_for
+from doctalk.ingest.resync import plan_resync, run_resync
 
 app = typer.Typer(help="doctalk — local drop-files -> wiki + chat knowledge base.", no_args_is_help=True)
 
@@ -85,6 +87,52 @@ def ingest(path: Path) -> None:
         _ingest_one(path)
     else:
         raise typer.BadParameter(f"not a file or directory: {path}")
+
+
+@app.command()
+def resync(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="List the missing stages and exit; run nothing."
+    ),
+) -> None:
+    """Backfill pipeline stages added after a source was ingested — no re-drop needed.
+
+    Adding a new stage (or upgrading a model) leaves already-ingested sources with a ledger gap:
+    the DAG would re-run the new stage, but nothing triggers it because the watcher only re-ingests
+    new *files*, not a changed *pipeline*. resync sweeps every source and runs any stage with no
+    ``done`` row. Idempotent and cheap (done stages are skipped); wired into watcher startup so a new
+    stage self-heals across the whole corpus.
+    """
+    plan = plan_resync()
+    if not plan:
+        typer.echo("In sync — every source has run every stage in its pipeline.")
+        return
+
+    total = sum(len(item.missing) for item in plan)
+    typer.echo(
+        f"{total} missing stage(s) across {len(plan)} source(s)"
+        + (" — dry run, nothing will change:" if dry_run else ":")
+    )
+    for item in plan:
+        typer.echo(f"  {item.filename:<32} {', '.join(item.missing)}")
+
+    if dry_run:
+        typer.echo("\nRe-run without --dry-run to backfill.")
+        return
+
+    typer.echo("")
+    ran = errored = 0
+    for item in plan:
+        for r in run_resync(item):
+            if r.status == "skipped":
+                continue
+            ran += 1
+            errored += r.status == "error"
+            typer.echo(
+                f"  {item.filename:<32} {r.stage:<14} {r.status}" + (f"  {r.error}" if r.error else "")
+            )
+    tail = f" ({errored} error(s))" if errored else ""
+    typer.echo(f"\nresync complete — ran {ran} stage(s){tail}.")
 
 
 @app.command()

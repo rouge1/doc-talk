@@ -60,6 +60,9 @@ schema (single source of the URL: `alembic/env.py` reads `config.get_settings()`
 **Now (Phase 0):**
 - `doctalk initdb` — create tables from the models (dev shortcut; prefer `alembic upgrade head`).
 - `doctalk ingest <file>` — hash → upsert the `files` row → run the resumable DAG; re-drop is a no-op.
+- `doctalk resync [--dry-run]` — backfill stages added to the pipeline *after* a source was ingested
+  (the watcher re-ingests new files, not a changed pipeline). Sweeps every source, runs any stage with
+  no `done` row; idempotent. Wired into watcher startup so a new stage self-heals across the corpus.
 - `doctalk stats` — file count + job counts by status.
 - `pytest -q` — Phase 0 verification (DAG idempotency + crash/resume), runs on a temp SQLite db.
 

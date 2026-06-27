@@ -123,6 +123,12 @@ ensure_frontend_deps() {
 watch_loop() {
     mkdir -p "$INBOX"
     touch "$WATCHER_STATE"
+    # On startup, backfill any pipeline stages added since a source was last ingested. The watcher
+    # re-ingests changed *files*; resync closes the gap when the *pipeline* grows a stage (so a new
+    # stage self-heals across the whole corpus instead of waiting for a manual re-drop). Cheap and
+    # idempotent — already-done stages are skipped.
+    echo "[watcher] $(date '+%F %T') resync: backfilling stages added since last ingest"
+    doctalk resync || echo "[watcher] resync failed (non-fatal; continuing to watch)"
     echo "[watcher] watching $INBOX every ${WATCH_INTERVAL}s (settle ${WATCH_SETTLE}s)"
     while true; do
         local now; now=$(date +%s)
