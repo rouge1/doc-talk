@@ -34,11 +34,19 @@ def reset_db_cache() -> None:
     _db.cache_clear()
 
 
+def _table_names(db) -> list[str]:
+    """Existing table names. ``list_tables()`` (the replacement for the deprecated ``table_names()``)
+    returns a paginated ``ListTablesResponse`` whose ``in`` operator does NOT see the names — only
+    ``.tables`` does. One page covers our fixed handful of index tables. Centralize the quirk here so
+    every existence check (``X in _table_names(db)``) stays correct."""
+    return db.list_tables().tables
+
+
 def _ensure_table(dim: int):
     import pyarrow as pa
 
     db = _db()
-    if TEXT_TABLE not in db.table_names():
+    if TEXT_TABLE not in _table_names(db):
         schema = pa.schema(
             [
                 ("chunk_id", pa.int64()),
@@ -63,13 +71,13 @@ def add_text_chunks(rows: list[dict[str, Any]]) -> None:
 
 def delete_file_text(file_id: int) -> None:
     db = _db()
-    if TEXT_TABLE in db.table_names():
+    if TEXT_TABLE in _table_names(db):
         db.open_table(TEXT_TABLE).delete(f"file_id = {file_id}")
 
 
 def drop_text_table() -> None:
     db = _db()
-    if TEXT_TABLE in db.table_names():
+    if TEXT_TABLE in _table_names(db):
         db.drop_table(TEXT_TABLE)
 
 
@@ -77,7 +85,7 @@ def search_text(query_vector: list[float], k: int, file_id: int | None = None) -
     """ANN search (cosine), optionally prefiltered to one file. Returns raw Lance rows including
     ``_distance``."""
     db = _db()
-    if TEXT_TABLE not in db.table_names():
+    if TEXT_TABLE not in _table_names(db):
         return []
     query = db.open_table(TEXT_TABLE).search(query_vector).metric("cosine").limit(k)
     if file_id is not None:
@@ -96,7 +104,7 @@ def _ensure_image_table(dim: int):
     import pyarrow as pa
 
     db = _db()
-    if IMAGE_TABLE not in db.table_names():
+    if IMAGE_TABLE not in _table_names(db):
         schema = pa.schema(
             [
                 ("file_id", pa.int64()),
@@ -120,20 +128,20 @@ def add_images(rows: list[dict[str, Any]]) -> None:
 
 def delete_file_images(file_id: int) -> None:
     db = _db()
-    if IMAGE_TABLE in db.table_names():
+    if IMAGE_TABLE in _table_names(db):
         db.open_table(IMAGE_TABLE).delete(f"file_id = {file_id}")
 
 
 def drop_image_table() -> None:
     db = _db()
-    if IMAGE_TABLE in db.table_names():
+    if IMAGE_TABLE in _table_names(db):
         db.drop_table(IMAGE_TABLE)
 
 
 def all_image_vectors() -> dict[int, list[float]]:
     """Every image's stored CLIP vector, keyed by file_id — the input to a global recluster."""
     db = _db()
-    if IMAGE_TABLE not in db.table_names():
+    if IMAGE_TABLE not in _table_names(db):
         return {}
     return {r["file_id"]: r["vector"] for r in db.open_table(IMAGE_TABLE).to_arrow().to_pylist()}
 
@@ -147,7 +155,7 @@ def get_image_vector(file_id: int) -> list[float] | None:
 def search_images(query_vector: list[float], k: int, where: str | None = None) -> list[dict]:
     """CLIP text->image ANN search with an optional metadata prefilter (a Lance SQL predicate)."""
     db = _db()
-    if IMAGE_TABLE not in db.table_names():
+    if IMAGE_TABLE not in _table_names(db):
         return []
     query = db.open_table(IMAGE_TABLE).search(query_vector).metric("cosine").limit(k)
     if where:
@@ -166,7 +174,7 @@ def _ensure_caption_table(dim: int):
     import pyarrow as pa
 
     db = _db()
-    if CAPTION_TABLE not in db.table_names():
+    if CAPTION_TABLE not in _table_names(db):
         schema = pa.schema(
             [
                 ("file_id", pa.int64()),
@@ -187,13 +195,13 @@ def add_captions(rows: list[dict[str, Any]]) -> None:
 
 def delete_file_caption(file_id: int) -> None:
     db = _db()
-    if CAPTION_TABLE in db.table_names():
+    if CAPTION_TABLE in _table_names(db):
         db.open_table(CAPTION_TABLE).delete(f"file_id = {file_id}")
 
 
 def drop_caption_table() -> None:
     db = _db()
-    if CAPTION_TABLE in db.table_names():
+    if CAPTION_TABLE in _table_names(db):
         db.drop_table(CAPTION_TABLE)
 
 
@@ -201,7 +209,7 @@ def search_captions(query_vector: list[float], k: int) -> list[dict]:
     """ANN search (cosine) over caption vectors. Returns raw Lance rows including ``_distance`` —
     same metric/space as ``search_text`` so the two result sets are comparable."""
     db = _db()
-    if CAPTION_TABLE not in db.table_names():
+    if CAPTION_TABLE not in _table_names(db):
         return []
     return db.open_table(CAPTION_TABLE).search(query_vector).metric("cosine").limit(k).to_list()
 
@@ -215,7 +223,7 @@ def _ensure_entity_table(dim: int):
     import pyarrow as pa
 
     db = _db()
-    if ENTITY_TABLE not in db.table_names():
+    if ENTITY_TABLE not in _table_names(db):
         schema = pa.schema(
             [
                 ("entity_id", pa.int64()),
@@ -235,20 +243,20 @@ def add_entity_names(rows: list[dict[str, Any]]) -> None:
 
 def delete_entity_name(entity_id: int) -> None:
     db = _db()
-    if ENTITY_TABLE in db.table_names():
+    if ENTITY_TABLE in _table_names(db):
         db.open_table(ENTITY_TABLE).delete(f"entity_id = {entity_id}")
 
 
 def drop_entity_names_table() -> None:
     db = _db()
-    if ENTITY_TABLE in db.table_names():
+    if ENTITY_TABLE in _table_names(db):
         db.drop_table(ENTITY_TABLE)
 
 
 def get_entity_vectors(entity_ids: list[int]) -> dict[int, list[float]]:
     """Stored name vectors for the given entities (for scoring candidates found via non-kNN keys)."""
     db = _db()
-    if ENTITY_TABLE not in db.table_names() or not entity_ids:
+    if ENTITY_TABLE not in _table_names(db) or not entity_ids:
         return {}
     wanted = set(entity_ids)
     return {
@@ -262,7 +270,7 @@ def search_entity_names(query_vector: list[float], k: int, type_: str | None = N
     """ANN over entity name vectors (cosine), optionally prefiltered to one type. Returns rows with
     ``entity_id`` and ``_distance``."""
     db = _db()
-    if ENTITY_TABLE not in db.table_names():
+    if ENTITY_TABLE not in _table_names(db):
         return []
     query = db.open_table(ENTITY_TABLE).search(query_vector).metric("cosine").limit(k)
     if type_:

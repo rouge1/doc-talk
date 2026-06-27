@@ -15,6 +15,7 @@ import PageView from "./routes/PageView";
 import Passage from "./routes/Passage";
 import Maintenance from "./routes/Maintenance";
 import Compare from "./routes/Compare";
+import NotFound from "./routes/NotFound";
 
 // Remember scroll position per history entry. On a fresh navigation (PUSH/REPLACE) we land at the top;
 // on back/forward (POP) we restore where the user was — which works because useFetch renders cached
@@ -90,6 +91,7 @@ export default function App() {
           <Route path="/doc/:hash/chapter/:chapterId" element={<Reader />} />
           <Route path="/doc/:hash/page/:page" element={<PageView />} />
           <Route path="/doc/:hash/passage/:chunk" element={<Passage />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </>

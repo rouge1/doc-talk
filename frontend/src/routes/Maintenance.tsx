@@ -312,9 +312,9 @@ export default function Maintenance() {
           </p>
         </div>
         <div className="ledger">
-          <Stat n={needYou} l="Needs your call" href="#decide" cls={needYou ? "s-running" : "s-done"} />
-          <Stat n={readyToFix} l="Ready to fix" href="#ready" cls={readyToFix ? "s-running" : "s-done"} />
-          <Stat n={clean} l="All clear" href="#clear" cls="s-done" />
+          <Stat value={needYou} l="Needs your call" k="needYou" href="#decide" running />
+          <Stat value={readyToFix} l="Ready to fix" k="readyToFix" href="#ready" running />
+          <Stat value={clean} l="All clear" k="clean" href="#clear" />
         </div>
       </section>
 
@@ -338,7 +338,8 @@ export default function Maintenance() {
       {/* Class 1 — only you can decide. Lead with it: this is the substance of the page. */}
       <ClassSection
         id="decide"
-        n={needYou}
+        value={needYou}
+        k="needYou"
         title="Needs your call"
         blurb="A judgment only you can make — read the evidence, then decide."
         empty={needYou === 0 ? "Nothing waiting on a decision." : null}
@@ -361,7 +362,8 @@ export default function Maintenance() {
       {/* Class 2 — mechanical, one approval, always reversible. */}
       <ClassSection
         id="ready"
-        n={readyToFix}
+        value={readyToFix}
+        k="readyToFix"
         title="Ready to fix"
         blurb="The fix is mechanical — the system knows the answer and just needs your go-ahead."
         empty={readyToFix === 0 ? "Nothing queued — no one-click fixes waiting." : null}
@@ -375,7 +377,8 @@ export default function Maintenance() {
       {/* Class 3 — clean. Every check that found nothing; each would open a case above if it had. */}
       <ClassSection
         id="clear"
-        n={clean}
+        value={clean}
+        k="clean"
         tone="good"
         title="All clear"
         blurb="Checks that found nothing this run — each would open its own case above if it did."
@@ -397,12 +400,72 @@ export default function Maintenance() {
   );
 }
 
+// Hold a ledger vital across reloads: seed from the value we last persisted (so the number is THERE,
+// not a "·"), breathe while the fresh count is in flight, then tick from the old value to the new one
+// when it lands. Reduced-motion just sets the final number. Keyed per stat so each holds its own.
+function useHeldNumber(value: number | undefined, key: string): { shown: number | null; stale: boolean } {
+  const storeKey = `maint-vital:${key}`;
+  const [shown, setShown] = useState<number | null>(() => {
+    try {
+      const raw = localStorage.getItem(storeKey);
+      return raw === null ? null : Number(raw);
+    } catch {
+      return null;
+    }
+  });
+  const fromRef = useRef<number>(shown ?? 0);
+  const raf = useRef(0);
+
+  useEffect(() => {
+    if (value === undefined) return; // still fetching — keep holding the old number
+    try {
+      localStorage.setItem(storeKey, String(value));
+    } catch {
+      /* private mode — the in-memory hold still carries the session */
+    }
+    const from = fromRef.current;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || from === value) {
+      setShown(value);
+      fromRef.current = value;
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / 600);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic, matches useCountUp
+      setShown(Math.round(from + (value - from) * eased));
+      if (t < 1) raf.current = requestAnimationFrame(step);
+      else fromRef.current = value;
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [value, storeKey]);
+
+  return { shown, stale: value === undefined };
+}
+
 // One ledger cell — big serif number + mono label, state-coloured. Shared idiom with Ingest/Library.
-// With `href` it's a link to the matching section below, so the number is a way in, not just a count.
-function Stat({ n, l, cls = "", href }: { n: number | undefined; l: string; cls?: string; href?: string }) {
+// The number is HELD across reloads and ticks to the fresh count (useHeldNumber), so a refresh shows
+// the last figure breathing, not a "·" then a hard pop. With `href` it links to its section below.
+function Stat({
+  value,
+  l,
+  k,
+  href,
+  running = false,
+}: {
+  value: number | undefined;
+  l: string;
+  k: string;
+  href?: string;
+  running?: boolean;
+}) {
+  const { shown, stale } = useHeldNumber(value, k);
+  const cls = running && shown ? "s-running" : "s-done";
   const body = (
     <>
-      <div className={`n tnum ${cls}`}>{n ?? "·"}</div>
+      <div className={`n tnum ${cls}${stale ? " vital-stale" : ""}`}>{shown ?? "·"}</div>
       <div className="l">{l}</div>
     </>
   );
@@ -419,7 +482,8 @@ function Stat({ n, l, cls = "", href }: { n: number | undefined; l: string; cls?
 // number the ledger shows, so "2 need you" and "2 · Needs your call" are visibly the same thing.
 function ClassSection({
   id,
-  n,
+  value,
+  k,
   title,
   blurb,
   tone = "",
@@ -427,17 +491,19 @@ function ClassSection({
   children,
 }: {
   id: string;
-  n: number | undefined;
+  value: number | undefined;
+  k: string;
   title: string;
   blurb: string;
   tone?: string;
   empty?: string | null;
   children?: React.ReactNode;
 }) {
+  const { shown, stale } = useHeldNumber(value, k);
   return (
     <section id={id} className={`klass ${tone}`} style={{ scrollMarginTop: "5rem" }}>
       <header className="klass-head">
-        <span className="klass-n tnum">{n ?? "·"}</span>
+        <span className={`klass-n tnum${stale ? " vital-stale" : ""}`}>{shown ?? "·"}</span>
         <div>
           <h2 className="klass-title">{title}</h2>
           <p className="klass-blurb">{blurb}</p>

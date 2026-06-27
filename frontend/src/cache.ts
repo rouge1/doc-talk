@@ -28,7 +28,9 @@ export function setCached<T>(ns: string, k: string, value: T): void {
   MEM.set(mk, value);
   try {
     localStorage.setItem(mk, JSON.stringify(value));
-    localStorage.setItem(lastKey(ns), k);
+    // NB: do NOT write __last here. The cache key `k` is "mode:query", but the __last slot is a
+    // URL querystring consumed as `/<view>?${last}` — writing the cache key poisons that redirect
+    // (a q-less URL that loops forever, blanking the page). __last is owned by setLastKey alone.
   } catch {
     /* quota / unavailable — in-memory copy still serves this session */
   }

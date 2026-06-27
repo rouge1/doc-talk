@@ -419,6 +419,9 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
 .ledger .n.s-running { color: var(--s-running); }
 .ledger .n.s-pending { color: var(--ink-soft); }
 .ledger .n.s-error { color: var(--s-error); }
+/* A held vital (last-known count) breathing while its fresh number is in flight — see useHeldNumber.
+   Reuses the ledger `pulse`; the number itself ticks old→new once the fetch lands. */
+.n.vital-stale, .klass-n.vital-stale { animation: pulse 1.15s ease-in-out infinite; }
 
 .job-list { display: grid; gap: .7rem; }
 .job-row { background: var(--card); border: 1px solid var(--rule); border-radius: 3px; padding: .8rem 1rem; }
@@ -945,6 +948,7 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 2.4rem 1.6rem 5rem; }
   animation-delay: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .case-stamp.resolved, .receipt.settling .receipt-row, .receipt.settling .r-check { animation: none; }
+  .n.vital-stale, .klass-n.vital-stale { animation: none; opacity: .55; }
 }
 
 @media (max-width: 640px) {

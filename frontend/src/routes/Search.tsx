@@ -114,8 +114,13 @@ export default function Search() {
   // Landing on a bare /search (the SEARCH nav tab, or returning later) restores the last view so
   // switching tabs never loses results — redirect to its URL; the cache-first effect serves it.
   if (!q) {
+    // Restore the last view — but only if it's a real querystring carrying a q=. A malformed or
+    // legacy value (an older build stored the cache key "mode:query") has no q, so redirecting to
+    // /search?<that> lands back here still q-less and loops forever, blanking the page.
     const last = getLastKey(NS);
-    if (last) return <Navigate to={`/search?${last}`} replace />;
+    if (last && new URLSearchParams(last).get("q")) {
+      return <Navigate to={`/search?${last}`} replace />;
+    }
   }
 
   const run = (nextQ: string, nextMode: SearchMode) => {
